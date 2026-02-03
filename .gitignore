@@ -1,0 +1,16 @@
+# Ignore all skills by default
+skills/*/
+
+# Whitelist tracked skills
+!skills/tasker-xml/
+!skills/termux-clipboard/
+!skills/termux-contacts/
+!skills/termux-device/
+!skills/termux-dialog/
+!skills/termux-location/
+!skills/termux-media/
+!skills/termux-notification/
+!skills/termux-sms/
+!skills/termux-stt/
+!skills/termux-tts/
+!skills/update-pi/
