@@ -2,7 +2,7 @@
 
 Personal configuration layer for [pi coding agent](https://github.com/badlogic/pi-mono). Pi is the base, Rho is the personality.
 
-Influenced by [OpenClaw](https://github.com/AidanTilgner/OpenClaw) — the idea of an agent with continuous presence, periodic check-ins, and persistent memory.
+Influenced by [OpenClaw](https://github.com/openclaw/openclaw) — the idea of an agent with continuous presence, periodic check-ins, and persistent memory.
 
 ## Structure
 
