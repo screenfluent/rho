@@ -220,7 +220,7 @@ export default function (pi: ExtensionAPI) {
     const brainContext = buildBrainContext(ctx.cwd);
     if (brainContext.trim()) {
       return {
-        systemPrompt: event.systemPrompt + "\n\n# Brain\n\n" + MEMORY_INSTRUCTIONS + "\n\n" + brainContext,
+        systemPrompt: event.systemPrompt + "\n\n# Memory\n\n" + MEMORY_INSTRUCTIONS + "\n\n" + brainContext,
       };
     }
   });
@@ -256,7 +256,7 @@ export default function (pi: ExtensionAPI) {
       id: Type.Optional(Type.String({ description: "Entry ID for reinforce" })),
     }),
 
-    async execute(_toolCallId, params, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       switch (params.action) {
         case "add_learning": {
           if (!params.content) {

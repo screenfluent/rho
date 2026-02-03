@@ -1,0 +1,30 @@
+# RHO Checklist
+
+Periodic check-in reminders for the agent.
+
+## Quick Scan
+
+- [ ] Any urgent messages or notifications I should see?
+- [ ] Any failed commands or errors from recent operations?
+- [ ] Any long-running tasks that finished?
+
+## Active Work
+
+- [ ] Any TODOs or FIXMEs in the code we just edited?
+- [ ] Are there open questions I haven't answered?
+- [ ] Any files left unsaved or uncommitted changes?
+
+## Follow-ups
+
+- [ ] Any background tasks to check on?
+- [ ] Any research or searches I asked for that haven't been reported?
+
+## Session Health
+
+- [ ] Is the context getting long? Should we `/compact`?
+- [ ] Are there old branches in `/tree` that should be cleaned up?
+
+---
+
+**Note:** This file is read on every heartbeat. Keep it concise.
+If this file is empty (only headers), heartbeats will be skipped to save API calls.

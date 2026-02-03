@@ -1,0 +1,16 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Trigger a rho check-in in the running daemon
+
+SESSION_NAME="rho"
+
+if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "Rho not running. Starting..."
+    ~/.local/bin/rho-daemon &
+    exit 1
+fi
+
+# Send rho check-in command to pi
+tmux send-keys -t "$SESSION_NAME" '/rho now' Enter
+
+# Show notification
+tmux display-message -t "$SESSION_NAME" "Rho check-in triggered" 2>/dev/null || true

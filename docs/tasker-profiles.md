@@ -32,6 +32,18 @@ Type text into the currently focused field.
 1. Keyboard → `write(%text)`
 2. Write File → `%result_file` with `{"success":true,"typed":"%text"}`
 
+### rho.tasker.launch_app
+Launch an app by name (used by the `open_app` tool action).
+
+**Intent extras:**
+- `app` — App name to launch (display name)
+- `package` — Optional fallback (same value is sent for backward compatibility)
+- `result_file` — Path to write result
+
+**Task:**
+1. Launch App → `%app` (or `%package` if `%app` is empty)
+2. Write File → `%result_file` with `{"success":true,"launched":"%app"}`
+
 ### rho.tasker.read_screen
 Read all visible UI elements.
 
@@ -42,16 +54,28 @@ Read all visible UI elements.
 1. AutoInput UI Query → Get all visible elements
 2. Write File → `%result_file` with format:
    ```
-   %app
+   %aiapp
    ~~~
-   %coords (comma-separated x,y pairs)
+   %aicoords()
    ~~~
-   %ids (comma-separated)
+   %aiid()
    ~~~
-   %texts (comma-separated)
+   %aitext()
    ~~~
-   %err:%errmsg
+   %err
    ```
+   (Optional: Variable Join `%aitext` with joiner `|||` to preserve commas.)
+
+### rho.tasker.read_screen_text
+Read all visible text (not just clickable elements).
+
+**Intent extras:**
+- `result_file` — Path to write result
+
+**Task:**
+1. AutoInput UI Query
+2. (Optional) Variable Join `%aitext` with joiner `|||`
+3. Write File → `%result_file` with `{"success":true,"texts":"%aitext"}`
 
 ### rho.tasker.scroll
 Scroll the screen up or down.
@@ -115,7 +139,46 @@ Open a URL in the browser.
 
 ## Result File Location
 
-All results are written to `/storage/emulated/0/rho/tasker-result.json` (or the path specified in `%result_file`).
+rho sends a unique `%result_file` path for every request under `/storage/emulated/0/rho`.
+Always write results to `%result_file`; don’t hardcode paths.
+
+## Result Payload Format
+
+- JSON (must include `"success"`: `true` or `false`)
+- Or the `~~~` block format used by `rho.tasker.read_screen`
+
+## Rho Daemon Profiles
+
+These profiles integrate with the `rho.ts` extension for background operation and periodic check-ins.
+
+### rho.tasker.check (RhoManual)
+Manual trigger for a rho check-in. Called when you want to force a check-in via Tasker.
+
+**Intent action:** `rho.tasker.check`
+
+**Task:**
+1. Run Shell → `~/.local/bin/rho-trigger`
+2. (Optional) Flash "Rho check-in triggered"
+
+### RhoDaemonBoot (Auto-start)
+Starts the rho daemon on device boot.
+
+**Profile:** Event → Device Boot
+
+**Task:**
+1. Wait → 1 minute (let system settle)
+2. Run Shell → `~/.local/bin/rho-daemon`
+
+### RhoPeriodic (Scheduled Check-ins)
+Triggers a rho check-in every 30 minutes (or your configured interval).
+
+**Profile:** Time → Repeat every 30 minutes
+
+**Task:**
+1. Run Shell → `~/.local/bin/rho-trigger`
+2. Flash → "Rho check-in triggered"
+
+**Note:** This is a backup trigger. The daemon has its own internal timer, but this ensures check-ins happen even if the daemon's timer drifts.
 
 ## Tips
 
@@ -123,3 +186,4 @@ All results are written to `/storage/emulated/0/rho/tasker-result.json` (or the 
 - Grant all permissions AutoInput requests
 - Test each profile manually before using with the extension
 - Use "Continue Task After Error" and write error info to result file for debugging
+- For rho daemon: Install tmux (`pkg install tmux`) before running `rho-daemon`

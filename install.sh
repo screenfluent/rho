@@ -55,6 +55,22 @@ if [ -d "$REPO_DIR/brain" ]; then
   done
 fi
 
+# Install rho-daemon scripts
+if [ -d "$REPO_DIR/scripts" ]; then
+  mkdir -p "$HOME/.local/bin"
+  for script in "$REPO_DIR/scripts"/rho-*; do
+    [ -f "$script" ] || continue
+    ln -sf "$script" "$HOME/.local/bin/$(basename "$script")"
+    echo "✓ Installed $(basename "$script")"
+  done
+fi
+
+# Bootstrap RHO.md if doesn't exist
+if [ ! -f "$HOME/RHO.md" ]; then
+  cp "$REPO_DIR/RHO.md.template" "$HOME/RHO.md"
+  echo "✓ Created ~/RHO.md (customize your check-in checklist)"
+fi
+
 # Check for API keys
 if [ -z "$BRAVE_API_KEY" ]; then
   echo ""
@@ -62,5 +78,17 @@ if [ -z "$BRAVE_API_KEY" ]; then
   echo '  export BRAVE_API_KEY="your-key"'
 fi
 
+# Check for tmux
+if ! command -v tmux &> /dev/null; then
+  echo ""
+  echo "⚠ tmux not found. Install for background daemon:"
+  echo '  pkg install tmux'
+fi
+
 echo ""
 echo "Done! Run /reload in pi to load extensions."
+echo ""
+echo "To start rho daemon:"
+echo '  rho-daemon      # Background with periodic check-ins'
+echo '  rho-stop        # Stop daemon'
+echo '  rho-trigger     # Manual check-in'

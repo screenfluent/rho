@@ -1,0 +1,24 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Stop the rho daemon
+
+SESSION_NAME="rho"
+PIDFILE="$HOME/.rho-daemon.pid"
+
+echo "Stopping rho daemon..."
+
+# Kill tmux session
+tmux kill-session -t "$SESSION_NAME" 2>/dev/null
+
+# Kill daemon script
+if [ -f "$PIDFILE" ]; then
+    kill $(cat "$PIDFILE") 2>/dev/null
+    rm -f "$PIDFILE"
+fi
+
+# Release wake lock
+termux-wake-unlock 2>/dev/null
+
+# Remove notification
+termux-notification-remove rho-daemon 2>/dev/null || true
+
+echo "Rho daemon stopped"

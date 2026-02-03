@@ -22,11 +22,13 @@ Termux (rho)                    Tasker
      │                             │
      │                             ▼
      │  ◄────────────────────  Write File
-     │  ~/.rho/tasker-result.json  │
+     │  %result_file (/storage/emulated/0/rho/...) │
      │  {"success": true}          │
      ▼                             │
   Read result                      │
 ```
+
+Note: rho sends a **unique** `%result_file` path for every request (under `/storage/emulated/0/rho`). Always write results to `%result_file` from the intent extras; don’t hardcode paths.
 
 ## Tasker Configuration
 
@@ -49,9 +51,11 @@ A3: Variable Set
     
 A4: Write File
     File: %result_file
-    Text: {"success": %success, "data": %data}
+    Text: %data
     Append: Off
 ```
+
+Note: Pass the **full payload** as Parameter 3 (JSON must include `"success"`; screen reads use the `~~~` format).
 
 ### Step 2: Create Action Tasks
 
@@ -68,7 +72,21 @@ A3: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {"action": "open_url", "url": "%url"}
+    Parameter 3: {"success": true, "action": "open_url", "url": "%url"}
+```
+
+#### Task: RhoLaunchApp
+
+```
+A1: Launch App
+    App: %app
+    (Use %package if %app is empty)
+
+A2: Perform Task
+    Name: RhoWriteResult
+    Parameter 1: %result_file
+    Parameter 2: true
+    Parameter 3: {"success": true, "launched": "%app"}
 ```
 
 #### Task: RhoClick
@@ -84,15 +102,17 @@ A2: If %err Set
           Name: RhoWriteResult
           Parameter 1: %result_file
           Parameter 2: false
-          Parameter 3: {"error": "Element not found: %target"}
+          Parameter 3: {"success": false, "error": "Element not found: %target"}
     Else
       A4: Perform Task
           Name: RhoWriteResult
           Parameter 1: %result_file
           Parameter 2: true
-          Parameter 3: {"clicked": "%target"}
+          Parameter 3: {"success": true, "clicked": "%target"}
     End If
 ```
+
+Note: For best reliability, prefer `%xcoord/%ycoord` when provided, then `%elementId`, then `%target`.
 
 #### Task: RhoType
 
@@ -103,46 +123,86 @@ A1: AutoInput Action
     Action: Click
     (Skip if %target not set)
     
-A2: AutoInput Action
-    Type: Key
-    Value: %text
-    Action: Write
+A2: Keyboard
+    Input: write(%text)
     
 A3: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {"typed": "%text"}
+    Parameter 3: {"success": true, "typed": "%text"}
 ```
 
 #### Task: RhoScreenshot
 
 ```
 A1: Take Screenshot
-    File: %output
+    File: %screenshot_file
     
 A2: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {"path": "%output"}
+    Parameter 3: {"success": true, "path": "%screenshot_file"}
 ```
 
 #### Task: RhoReadScreen
 
 ```
 A1: AutoInput UI Query
-    Variables: %texts, %ids
+    (Uses %aitext(), %aiid(), %aicoords(), %aiapp)
     
 A2: Variable Join
-    Name: %texts
+    Name: %aitext
     Joiner: |||
     
 A3: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {"texts": "%texts"}
+    Parameter 3: %aiapp
+               ~~~
+               %aicoords()
+               ~~~
+               %aiid()
+               ~~~
+               %aitext()
+               ~~~
+               %err
+```
+
+#### Task: RhoReadScreenText
+
+```
+A1: AutoInput UI Query
+
+A2: Variable Join
+    Name: %aitext
+    Joiner: |||
+
+A3: Perform Task
+    Name: RhoWriteResult
+    Parameter 1: %result_file
+    Parameter 2: true
+    Parameter 3: {"success": true, "texts": "%aitext"}
+```
+
+#### Task: RhoScroll
+
+```
+A1: If %direction eq down
+      A2: AutoInput Gestures
+          Swipe: 540,1500 → 540,500
+    Else
+      A3: AutoInput Gestures
+          Swipe: 540,500 → 540,1500
+    End If
+
+A4: Perform Task
+    Name: RhoWriteResult
+    Parameter 1: %result_file
+    Parameter 2: true
+    Parameter 3: {"success": true}
 ```
 
 #### Task: RhoBack
@@ -154,7 +214,7 @@ A2: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {}
+    Parameter 3: {"success": true}
 ```
 
 #### Task: RhoHome
@@ -166,7 +226,7 @@ A2: Perform Task
     Name: RhoWriteResult
     Parameter 1: %result_file
     Parameter 2: true
-    Parameter 3: {}
+    Parameter 3: {"success": true}
 ```
 
 ### Step 3: Create Intent Profiles
@@ -179,11 +239,17 @@ Create a profile for each action:
 - Task: RhoOpenUrl
 - Pass variables: `%url`, `%result_file`
 
+**Profile: Rho Launch App (used by open_app)**
+- Event: Intent Received
+- Action: `rho.tasker.launch_app`
+- Task: RhoLaunchApp
+- Pass variables: `%app`, `%package`, `%result_file`
+
 **Profile: Rho Click**
 - Event: Intent Received  
 - Action: `rho.tasker.click`
 - Task: RhoClick
-- Pass variables: `%target`, `%result_file`
+- Pass variables: `%target`, `%elementId`, `%xcoord`, `%ycoord`, `%result_file`
 
 **Profile: Rho Type**
 - Event: Intent Received
@@ -193,15 +259,27 @@ Create a profile for each action:
 
 **Profile: Rho Screenshot**
 - Event: Intent Received
-- Action: `rho.tasker.screenshot`
+- Action: `rho.tasker.read_screenshot`
 - Task: RhoScreenshot
-- Pass variables: `%output`, `%result_file`
+- Pass variables: `%screenshot_file`, `%result_file`
 
 **Profile: Rho Read Screen**
 - Event: Intent Received
 - Action: `rho.tasker.read_screen`
 - Task: RhoReadScreen
 - Pass variables: `%result_file`
+
+**Profile: Rho Read Screen Text**
+- Event: Intent Received
+- Action: `rho.tasker.read_screen_text`
+- Task: RhoReadScreenText
+- Pass variables: `%result_file`
+
+**Profile: Rho Scroll**
+- Event: Intent Received
+- Action: `rho.tasker.scroll`
+- Task: RhoScroll
+- Pass variables: `%direction`, `%result_file`
 
 **Profile: Rho Back**
 - Event: Intent Received
@@ -223,10 +301,10 @@ From Termux:
 # Test open URL
 am broadcast --user 0 -a rho.tasker.open_url \
   -e url "https://example.com" \
-  -e result_file "/data/data/com.termux/files/home/.rho/tasker-result.json"
+  -e result_file "/storage/emulated/0/rho/tasker-result-test.json"
 
 # Check result
-cat ~/.rho/tasker-result.json
+cat /storage/emulated/0/rho/tasker-result-test.json
 
 # Or use the rho command
 /tasker open_url https://example.com
@@ -236,15 +314,6 @@ cat ~/.rho/tasker-result.json
 
 1. **Intent not received**: Check Tasker is running, battery optimization disabled
 2. **AutoInput not working**: Enable Accessibility Service for AutoInput
-3. **Permission denied on result file**: Tasker needs storage permission for Termux home
+3. **Permission denied on result file**: Tasker needs storage permission for `/storage/emulated/0`
 4. **Timeout**: Increase timeout or check Tasker logs
 
-## Alternative: Shared Storage
-
-If Tasker can't write to Termux home, use shared storage:
-
-```
-Result file: /storage/emulated/0/rho/tasker-result.json
-```
-
-Update `RESULT_FILE` in `tasker.ts` accordingly.

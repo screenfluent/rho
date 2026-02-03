@@ -1,0 +1,53 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Rho Daemon - Keep pi running in background with check-ins
+
+SESSION_NAME="rho"
+PIDFILE="$HOME/.rho-daemon.pid"
+
+# Acquire wake lock (prevents doze mode)
+termux-wake-lock
+
+cleanup() {
+    termux-wake-unlock 2>/dev/null
+    rm -f "$PIDFILE"
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# Store PID
+echo $$ > "$PIDFILE"
+
+# Check if tmux session exists
+if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+    echo "Rho is already running. Attaching..."
+    tmux attach -t "$SESSION_NAME"
+else
+    echo "Starting rho daemon..."
+    # Create new detached tmux session running pi
+    # The rho extension will auto-load
+    tmux new-session -d -s "$SESSION_NAME" -c "$HOME" "pi -c"
+    
+    # Optionally send notification
+    if command -v termux-notification >/dev/null; then
+        termux-notification \
+            --title "Rho Daemon" \
+            --content "Check-ins active (30m)" \
+            --ongoing \
+            --action "termux-tmux attach -t rho" \
+            --button1 "Check Now" \
+            --button1-action "termux-tmux send-keys -t rho '/rho now' Enter"
+    fi
+    
+    echo "Rho running in tmux session: $SESSION_NAME"
+    echo "Attach with: tmux attach -t $SESSION_NAME"
+fi
+
+# Keep script alive to hold wake lock
+while true; do
+    # Check if tmux session still alive
+    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        echo "Rho session died. Restarting..."
+        tmux new-session -d -s "$SESSION_NAME" -c "$HOME" "pi -c"
+    fi
+    sleep 30
+done

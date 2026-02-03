@@ -15,18 +15,18 @@ import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 
 // Paths - Use shared storage so Tasker can write results
 const RHO_DIR = "/storage/emulated/0/rho";
-const RESULT_FILE = path.join(RHO_DIR, "tasker-result.json");
-const SCREENSHOT_DIR = "/storage/emulated/0/Download/AutoInput/Screenshots";
+const DEFAULT_RESULT_FILE = path.join(RHO_DIR, "tasker-result.json");
 
 // Timing constants
 const DEFAULT_TIMEOUT = 10000;
 const POLL_INTERVAL = 150;
 const POST_ACTION_DELAY = 400; // Delay after click/type to let UI settle
 const RETRY_DELAY = 300;
+const DEBUG_LOG = process.env.RHO_TASKER_DEBUG === "1" || process.env.RHO_TASKER_DEBUG === "true";
 
 // Device dimensions - detected dynamically
 let deviceWidth = 0;
@@ -130,6 +130,14 @@ function parseTaskerOutput(content: string): TaskerResult {
   };
 }
 
+function splitTexts(texts?: string): string[] {
+  if (!texts) return [];
+  if (texts.includes('|||')) {
+    return texts.split('|||').map(s => s.trim());
+  }
+  return texts.split(',').map(s => s.trim());
+}
+
 // Parse screen result into structured elements
 // Uses IDs as source of truth for element count
 function parseScreenElements(result: TaskerResult): ScreenElement[] {
@@ -138,13 +146,7 @@ function parseScreenElements(result: TaskerResult): ScreenElement[] {
   const ids = result.ids.split(',').map(s => s.trim());
   const coordPairs = result.coords?.split(',').map(s => s.trim()) || [];
   
-  // Try ||| separator first, fall back to comma
-  let texts: string[];
-  if (result.texts?.includes('|||')) {
-    texts = result.texts.split('|||').map(s => s.trim());
-  } else {
-    texts = result.texts?.split(',').map(s => s.trim()) || [];
-  }
+  const texts = splitTexts(result.texts);
   
   const elements: ScreenElement[] = [];
   
@@ -178,7 +180,7 @@ function findElementByText(elements: ScreenElement[], searchText: string, result
   
   // If not found, search raw texts and try to find corresponding coords
   if (result?.texts) {
-    const rawTexts = result.texts.split(',').map(s => s.trim());
+    const rawTexts = splitTexts(result.texts);
     const coordPairs = result.coords?.split(',').map(s => s.trim()) || [];
     const ids = result.ids?.split(',').map(s => s.trim()) || [];
     
@@ -221,41 +223,48 @@ function findElementByText(elements: ScreenElement[], searchText: string, result
 // Helper: sleep
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function generateResultFile(): string {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return path.join(RHO_DIR, `tasker-result-${suffix}.json`);
+}
+
 // Ensure directories exist
 function ensureDirs(): void {
   try {
     if (!fs.existsSync(RHO_DIR)) fs.mkdirSync(RHO_DIR, { recursive: true });
-    if (!fs.existsSync(SCREENSHOT_DIR)) fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
   } catch {
     // Ignore - dirs might exist or be created by Tasker
   }
 }
 
-// Get file modification time in ms (0 if doesn't exist)
-function getFileMtime(): number {
-  try {
-    const stat = execSync(`stat -c %Y "${RESULT_FILE}" 2>/dev/null`, { encoding: "utf-8" });
-    return parseInt(stat.trim(), 10) * 1000;
-  } catch {
-    return 0;
-  }
-}
-
 // Clear result file before sending command
-function clearResult(): void {
+function clearResult(resultFile: string): void {
   try {
-    execSync(`rm -f "${RESULT_FILE}"`, { stdio: "ignore" });
+    execSync(`rm -f "${resultFile}"`, { stdio: "ignore" });
   } catch {
     // Ignore errors
   }
 }
 
 // Read file via shell to bypass Node fs caching on Android shared storage
-function readResultFile(): string | null {
+function readResultFile(resultFile: string, minMtime?: number): string | null {
   try {
-    const content = execSync(`cat "${RESULT_FILE}" 2>/dev/null`, { encoding: "utf-8" });
-    if (content) {
-      fs.writeFileSync("/storage/emulated/0/rho/debug.log", content);
+    if (minMtime) {
+      const stat = fs.statSync(resultFile);
+      if (stat.mtimeMs < minMtime) return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const content = execSync(`cat "${resultFile}" 2>/dev/null`, { encoding: "utf-8" });
+    if (content && DEBUG_LOG) {
+      try {
+        fs.writeFileSync(path.join(RHO_DIR, "tasker-debug.log"), content);
+      } catch {
+        // Ignore debug log failures
+      }
     }
     return content.trim() || null;
   } catch {
@@ -265,28 +274,46 @@ function readResultFile(): string | null {
 
 // Wait for result file to appear (with timeout)
 // Uses startTime to ensure we only accept files written after we started
-async function waitForResult(timeoutMs = DEFAULT_TIMEOUT, startTime?: number, checkPng = false): Promise<TaskerResult> {
+async function waitForResult(
+  resultFile: string,
+  timeoutMs = DEFAULT_TIMEOUT,
+  startTime?: number,
+  checkPng = false
+): Promise<TaskerResult> {
   const start = Date.now();
   const legacyPng = path.join(RHO_DIR, "tasker-result.png");
   const minMtime = (startTime || start) - 5000;
+  const fallbackFile = resultFile === DEFAULT_RESULT_FILE ? null : DEFAULT_RESULT_FILE;
 
   while (Date.now() - start < timeoutMs) {
     if (checkPng && fs.existsSync(legacyPng)) {
-       const stat = fs.statSync(legacyPng);
-       if (stat.mtimeMs > minMtime) {
-         return { success: true };
-       }
+      const stat = fs.statSync(legacyPng);
+      if (stat.mtimeMs > minMtime) {
+        return { success: true };
+      }
     }
-    const content = readResultFile();
+
+    let content = readResultFile(resultFile, minMtime);
+    let usedFile = resultFile;
+
+    if (!content && fallbackFile) {
+      const fallbackContent = readResultFile(fallbackFile, minMtime);
+      if (fallbackContent) {
+        content = fallbackContent;
+        usedFile = fallbackFile;
+      }
+    }
+
     if (content) {
       if (checkPng && content.startsWith('\x89PNG')) {
+        clearResult(usedFile);
         return { success: true };
       }
       // Try parsing as JSON first
       if (content.startsWith('{')) {
         try {
           const jsonResult = JSON.parse(content) as TaskerResult;
-          clearResult();
+          clearResult(usedFile);
           return jsonResult;
         } catch {
           // Not valid JSON, continue
@@ -295,7 +322,7 @@ async function waitForResult(timeoutMs = DEFAULT_TIMEOUT, startTime?: number, ch
       if (content.includes('~~~')) {
         const result = parseTaskerOutput(content);
         if (result.success || result.error) {
-          clearResult();
+          clearResult(usedFile);
           return result;
         }
       }
@@ -314,10 +341,12 @@ function sendIntent(action: string, extras: Record<string, string>): void {
     args.push("-e", key, value);
   }
 
-  try {
-    execSync(`am ${args.map((a) => `"${a}"`).join(" ")}`, { stdio: "ignore" });
-  } catch (err) {
-    throw new Error(`Failed to send intent: ${err}`);
+  const result = spawnSync("am", args, { stdio: "ignore" });
+  if (result.error) {
+    throw new Error(`Failed to send intent: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(`Failed to send intent (exit ${result.status})`);
   }
 }
 
@@ -332,13 +361,14 @@ async function taskerCommand(
   
   // Record start time before clearing, so we know to only accept newer files
   const startTime = Date.now();
-  clearResult();
+  const resultFile = generateResultFile();
+  clearResult(resultFile);
 
   // Add result file path so Tasker knows where to write
-  params.result_file = RESULT_FILE;
+  params.result_file = resultFile;
 
   sendIntent(action, params);
-  return waitForResult(timeoutMs, startTime, checkPng);
+  return waitForResult(resultFile, timeoutMs, startTime, checkPng);
 }
 
 // ============================================================================
@@ -361,6 +391,25 @@ function screenContainsText(result: TaskerResult, searchText: string): boolean {
   return result.texts.toLowerCase().includes(searchText.toLowerCase());
 }
 
+// Open app by name - uses Tasker to launch
+async function openAppAndRead(appName: string, timeoutMs = DEFAULT_TIMEOUT): Promise<TaskerResult> {
+  // Use Tasker to launch the app by name
+  const result = await taskerCommand("launch_app", { app: appName, package: appName }, timeoutMs);
+  if (!result.success) {
+    return result;
+  }
+  
+  await sleep(800); // Apps take longer to launch than page loads
+  
+  const screen = await readScreenWithRetry(3, 5000);
+  return {
+    success: true,
+    app: screen.app || appName,
+    launched: appName,
+    ...screen,
+  };
+}
+
 // Wait for specific text to appear on screen
 async function waitForText(text: string, timeoutMs = 10000): Promise<TaskerResult | null> {
   const start = Date.now();
@@ -375,25 +424,33 @@ async function waitForText(text: string, timeoutMs = 10000): Promise<TaskerResul
 }
 
 // Click and wait for UI to settle, then read screen
-// Priority: 1) Coordinates, 2) ID, 3) Text
+// Priority: 1) Direct coordinates (x,y format), 2) Element lookup, 3) Text
 async function clickAndRead(target: string, timeoutMs = DEFAULT_TIMEOUT): Promise<TaskerResult> {
-  // First, get the screen to find element info
-  const screen = await taskerCommand("read_screen", {}, 5000);
   let xcoord = "", ycoord = "", elementId = "";
   
-  if (screen.success) {
-    const elements = parseScreenElements(screen);
-    const element = findElementByText(elements, target, screen);
-    if (element) {
-      // Prioritize coordinates for maximum reliability
-      if (element.x > 0 && element.y > 0) {
-        xcoord = String(element.x);
-        ycoord = String(element.y);
-        // We still send elementId as a secondary backup if you want, 
-        // but Tasker should use xcoord first now.
-        if (element.id) elementId = element.id;
-      } else if (element.id) {
-        elementId = element.id;
+  // Check if target is direct coordinates (e.g., "127,2407")
+  const coordMatch = target.match(/^(\d+)\s*,\s*(\d+)$/);
+  if (coordMatch) {
+    xcoord = coordMatch[1];
+    ycoord = coordMatch[2];
+  } else {
+    // Look up element by text
+    const screen = await taskerCommand("read_screen", {}, 5000);
+    
+    if (screen.success) {
+      const elements = parseScreenElements(screen);
+      const element = findElementByText(elements, target, screen);
+      if (element) {
+        // Prioritize coordinates for maximum reliability
+        if (element.x > 0 && element.y > 0) {
+          xcoord = String(element.x);
+          ycoord = String(element.y);
+          // We still send elementId as a secondary backup if you want, 
+          // but Tasker should use xcoord first now.
+          if (element.id) elementId = element.id;
+        } else if (element.id) {
+          elementId = element.id;
+        }
       }
     }
   }
@@ -476,7 +533,8 @@ export default function (pi: ExtensionAPI) {
     name: "tasker",
     label: "Tasker",
     description: `Control Android UI via Tasker. Actions:
-- open_url: Open URL in browser (auto-waits for load)
+- open_url: Open URL in browser (optionally wait for text)
+- open_app: Open app by name (e.g., "Telegram", "Chrome")
 - click: Click element by text or coordinates (auto-reads screen after)
 - type: Type text (auto-reads screen after)
 - read_screen: Read all visible UI text
@@ -490,6 +548,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       action: StringEnum([
         "open_url", 
+        "open_app",
         "click", 
         "type", 
         "screenshot", 
@@ -502,8 +561,10 @@ export default function (pi: ExtensionAPI) {
         "wait_for"
       ] as const),
       url: Type.Optional(Type.String({ description: "URL to open (for open_url)" })),
+      app: Type.Optional(Type.String({ description: "App name to open (for open_app)" })),
       target: Type.Optional(Type.String({ description: "Text or element ID to click/target" })),
-      text: Type.Optional(Type.String({ description: "Text to type (for type action) or wait for (wait_for action)" })),
+      text: Type.Optional(Type.String({ description: "Text to type (for type action)" })),
+      wait_for: Type.Optional(Type.String({ description: "Text to wait for (for open_url or wait_for action)" })),
       direction: Type.Optional(Type.String({ description: "Scroll direction: up or down" })),
       timeout: Type.Optional(Type.Number({ description: "Timeout in ms (default: 10000)" })),
     }),
@@ -519,8 +580,18 @@ export default function (pi: ExtensionAPI) {
             if (!params.url) {
               return { content: [{ type: "text", text: "Error: url required" }], details: { error: true } };
             }
+            const waitForText = params.wait_for || params.text;
             // Use robust open that waits for load
-            result = await openUrlAndWait(params.url, params.text, timeout);
+            result = await openUrlAndWait(params.url, waitForText, timeout);
+            break;
+          }
+
+          case "open_app": {
+            if (!params.app) {
+              return { content: [{ type: "text", text: "Error: app name required" }], details: { error: true } };
+            }
+            // Use Tasker to launch app by name
+            result = await openAppAndRead(params.app, timeout);
             break;
           }
 
@@ -546,14 +617,24 @@ export default function (pi: ExtensionAPI) {
             // Generate screenshot path
             const screenshotPath = path.join(RHO_DIR, `screenshot-${Date.now()}.png`);
             
-            // Clear old screenshot
-            try { execSync(`rm -f "${screenshotPath}"`); } catch {}
-            
             // Send screenshot path to Tasker - it will save the screenshot there
             result = await taskerCommand("read_screenshot", { screenshot_file: screenshotPath }, timeout);
             
             if (result.success && fs.existsSync(screenshotPath)) {
               result.path = screenshotPath;
+              
+              // Keep only the 3 most recent screenshots
+              try {
+                const files = fs.readdirSync(RHO_DIR)
+                  .filter(f => f.startsWith('screenshot-') && f.endsWith('.png'))
+                  .map(f => ({ name: f, path: path.join(RHO_DIR, f), mtime: fs.statSync(path.join(RHO_DIR, f)).mtimeMs }))
+                  .sort((a, b) => b.mtime - a.mtime); // newest first
+                
+                // Delete all but the 3 newest
+                for (const file of files.slice(3)) {
+                  fs.unlinkSync(file.path);
+                }
+              } catch { /* ignore cleanup errors */ }
             } else if (!result.success) {
               result.error = result.error || "Screenshot failed";
             }
@@ -626,14 +707,15 @@ export default function (pi: ExtensionAPI) {
           }
 
           case "wait_for": {
-            if (!params.text) {
-              return { content: [{ type: "text", text: "Error: text required for wait_for" }], details: { error: true } };
+            const waitText = params.wait_for || params.text;
+            if (!waitText) {
+              return { content: [{ type: "text", text: "Error: wait_for text required" }], details: { error: true } };
             }
-            const screen = await waitForText(params.text, timeout);
+            const screen = await waitForText(waitText, timeout);
             if (screen) {
-              result = { success: true, found: params.text, ...screen };
+              result = { success: true, found: waitText, ...screen };
             } else {
-              result = { success: false, error: `Text "${params.text}" not found within timeout` };
+              result = { success: false, error: `Text "${waitText}" not found within timeout` };
             }
             break;
           }
@@ -670,7 +752,7 @@ export default function (pi: ExtensionAPI) {
       const action = parts[0];
 
       if (!action) {
-        ctx.ui.notify("Usage: /tasker <open_url|click|type|read_screen|scroll|back|home> [args]", "error");
+        ctx.ui.notify("Usage: /tasker <open_url|open_app|click|type|read_screen|scroll|back|home> [args]", "error");
         return;
       }
 
@@ -682,6 +764,9 @@ export default function (pi: ExtensionAPI) {
         switch (action) {
           case "open_url":
             result = await openUrlAndWait(parts[1] || "https://example.com");
+            break;
+          case "open_app":
+            result = await openAppAndRead(parts.slice(1).join(" ") || "Telegram");
             break;
           case "click":
             result = await clickAndRead(parts.slice(1).join(" ") || "OK");

@@ -7,12 +7,20 @@ Personal configuration layer for [pi coding agent](https://github.com/badlogic/p
 ```
 rho/
 ├── extensions/         # Custom tools and event handlers
-│   ├── brave-search.ts # Web search
+│   ├── rho.ts          # Continuous presence (periodic check-ins)
 │   ├── brain.ts        # Persistent memory system
+│   ├── brave-search.ts # Web search
 │   └── tasker.ts       # Android UI automation via Tasker
 ├── skills/             # On-demand capability packages
+├── scripts/            # Shell scripts for daemon management
+│   ├── rho-daemon      # Start background daemon
+│   ├── rho-stop        # Stop daemon
+│   ├── rho-trigger     # Manual check-in trigger
+│   └── rho-status      # Check daemon status
+├── tasker/             # Importable Tasker profiles (.prf.xml)
 ├── brain/              # Default brain files (copied on install)
 ├── AGENTS.md.template  # Identity template (injected on install)
+├── RHO.md.template     # Checklist template for check-ins
 └── install.sh          # Setup script
 ```
 
@@ -30,6 +38,33 @@ This will:
 - Bootstrap `~/.pi/brain/` with defaults
 
 ## Extensions
+
+### rho.ts
+Continuous presence system. Periodic check-ins to surface urgent tasks, follow-ups, and session health issues without interrupting flow.
+
+**Commands:**
+- `/rho status` — Show check-in state
+- `/rho enable/disable` — Toggle check-ins  
+- `/rho now` — Trigger check-in immediately
+- `/rho interval 30m` — Set interval (5m-24h, or 0 to disable)
+
+**Tools:**
+- `rho_control(action, interval?)` — LLM-callable control
+
+**Daemon (runs in background):**
+```bash
+rho-daemon      # Start background daemon (tmux + wake lock)
+rho-stop        # Stop daemon
+rho-trigger     # Manual trigger
+rho-status      # Check if running
+```
+
+**Tasker Integration:**
+- `RhoDaemonBoot.prf.xml` — Auto-start on boot
+- `RhoPeriodic.prf.xml` — Trigger every 30m  
+- `RhoManual.prf.xml` — Intent handler `rho.tasker.check`
+
+**Checklist:** Create `~/RHO.md` for custom checklists (auto-read on each check-in).
 
 ### brain.ts
 Persistent memory (learnings, preferences, context)
