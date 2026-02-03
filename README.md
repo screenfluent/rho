@@ -88,8 +88,22 @@ Android UI automation via Tasker + AutoInput. Enables the agent to control the A
 
 **Requirements:**
 - [Tasker](https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm) app
-- [AutoInput](https://play.google.com/store/apps/details?id=com.joaomgcd.autoinput) plugin
-- Tasker profiles for each `rho.tasker.*` intent (see docs/tasker-profiles.md)
+
+**Optional: AutoInput**
+
+[AutoInput](https://play.google.com/store/apps/details?id=com.joaomgcd.autoinput) is a Tasker plugin that enables UI automation (clicking elements, reading screen text, gestures). Required for:
+- `click`, `read_screen`, `read_elements`, `scroll` actions
+- X/Twitter navigation
+- Any app control automation
+
+If you have AutoInput installed, import the Rho Tasker project:
+
+1. Copy `tasker/Rho.prj.xml` to your device
+2. Open Tasker → Long-press the home icon (bottom left) → Import Project
+3. Select `Rho.prj.xml`
+4. Enable the imported profiles
+
+This provides all the Intent handlers (`rho.tasker.*`) needed for UI automation.
 
 **Optional (for screenshot without permission dialog):**
 ```bash
