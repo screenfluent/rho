@@ -70,7 +70,7 @@ if [ -d "$REPO_DIR/scripts" ]; then
     mkdir -p "$BIN_DIR"
   fi
   
-  for script in "$REPO_DIR/scripts"/rho-*; do
+  for script in "$REPO_DIR/scripts"/rho "$REPO_DIR/scripts"/rho-*; do
     [ -f "$script" ] || continue
     chmod +x "$script"
     ln -sf "$script" "$BIN_DIR/$(basename "$script")"

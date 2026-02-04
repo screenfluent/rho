@@ -106,15 +106,42 @@ function barColor(pct: number, theme: any): (s: string) => string {
   return (s: string) => theme.fg("success", s);
 }
 
-function detectProvider(model: { provider?: string; id?: string } | undefined | null): "codex" | "claude" | null {
+function detectProvider(model: { provider?: string; id?: string; name?: string; api?: string } | string | undefined | null): "codex" | "claude" | null {
   if (!model) return null;
+  if (typeof model === "string") {
+    const id = model.toLowerCase();
+    if (id.includes("claude")) return "claude";
+    if (id.includes("gpt") || id.includes("codex")) return "codex";
+    return null;
+  }
+
   const p = (model.provider || "").toLowerCase();
   const id = (model.id || "").toLowerCase();
-  if (p.includes("openai") || p.includes("codex") || id.includes("gpt") || id.includes("codex")) return "codex";
-  if (p.includes("anthropic") || id.includes("claude")) return "claude";
-  if (p.includes("google") || p.includes("antigravity")) {
-    if (id.includes("claude")) return "claude";
+  const name = (model.name || "").toLowerCase();
+  const api = (model.api || "").toLowerCase();
+
+  // Claude/Anthropic detection first
+  if (p.includes("anthropic") || api.includes("anthropic") || id.includes("claude") || name.includes("claude")) return "claude";
+
+  // Codex/OpenAI detection
+  if (
+    p.includes("openai") ||
+    p.includes("codex") ||
+    api.includes("openai") ||
+    api.includes("codex") ||
+    id.includes("gpt") ||
+    id.includes("codex") ||
+    name.includes("gpt") ||
+    name.includes("codex")
+  ) {
+    return "codex";
   }
+
+  // Google/antigravity routing Claude through Gemini
+  if ((p.includes("google") || p.includes("antigravity")) && (id.includes("claude") || name.includes("claude"))) {
+    return "claude";
+  }
+
   return null;
 }
 
@@ -140,7 +167,7 @@ export default function (pi: ExtensionAPI) {
   function updateWidget() {
     if (ctx) {
       ctx.ui.setWidget("usage-bars", (_tui: any, theme: any) => ({
-        render: () => renderWidget(theme),
+        render: (width: number) => renderWidget(theme, width),
         invalidate: () => {},
       }));
     }
@@ -150,37 +177,54 @@ export default function (pi: ExtensionAPI) {
     label: string,
     data: { session: number; weekly: number; error?: string; extraSpend?: number; extraLimit?: number },
     theme: any,
+    width?: number,
   ): string {
     const dimFn = (s: string) => theme.fg("dim", s);
     const emptyFn = (s: string) => theme.fg("dim", s);
     if (data.error) return ` ${theme.fg("muted", label)} ${theme.fg("error", data.error)}`;
+
+    const sPct = String(data.session).padStart(3) + "%";
+    const wPct = String(data.weekly).padStart(3) + "%";
+
     const sFill = barColor(data.session, theme);
     const wFill = barColor(data.weekly, theme);
     const sBar = renderBar(data.session, BAR_WIDTH, sFill, emptyFn);
     const wBar = renderBar(data.weekly, BAR_WIDTH, wFill, emptyFn);
-    let line = ` ${theme.fg("muted", label)} 5h ${sBar} ${dimFn(String(data.session).padStart(3) + "%")}  7d ${wBar} ${dimFn(String(data.weekly).padStart(3) + "%")}`;
+    let line = ` ${theme.fg("muted", label)} 5h ${sBar} ${dimFn(sPct)}  7d ${wBar} ${dimFn(wPct)}`;
     if (data.extraSpend !== undefined && data.extraLimit !== undefined) {
       line += `  ${dimFn("$" + data.extraSpend.toFixed(0) + "/" + data.extraLimit)}`;
     }
+
+    if (width !== undefined && visibleWidth(line) > width) {
+      const compactWithLabel = ` ${theme.fg("muted", label)} 5h ${dimFn(sPct)} 7d ${dimFn(wPct)}`;
+      if (visibleWidth(compactWithLabel) <= width) return compactWithLabel;
+      return ` 5h ${dimFn(sPct)} 7d ${dimFn(wPct)}`;
+    }
+
     return line;
   }
 
-  function renderWidget(theme: any): string[] {
+  function renderWidget(theme: any, width: number): string[] {
     const active = state.activeProvider;
-    if (active === "codex" && state.codex) return [renderProviderLine("Codex ", state.codex, theme)];
-    if (active === "claude" && state.claude) return [renderProviderLine("Claude", state.claude, theme)];
-    return [];
+    let lines: string[] = [];
+    if (active === "codex" && state.codex) lines = [renderProviderLine("Codex ", state.codex, theme, width)];
+    else if (active === "claude" && state.claude) lines = [renderProviderLine("Claude", state.claude, theme, width)];
+    return lines.map((line) => truncateToWidth(line, width, "", true));
   }
 
-  function updateProvider(_ctx: any) {
+  function updateProviderFrom(modelLike: any): boolean {
     const prev = state.activeProvider;
-    state.activeProvider = detectProvider(_ctx.model);
-    if (prev !== state.activeProvider) updateWidget();
+    state.activeProvider = detectProvider(modelLike);
+    if (prev !== state.activeProvider) {
+      updateWidget();
+      return true;
+    }
+    return false;
   }
 
   pi.on("session_start", async (_event, _ctx) => {
     ctx = _ctx;
-    updateProvider(_ctx);
+    updateProviderFrom(_ctx.model);
     await poll();
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(() => poll(), POLL_INTERVAL_MS);
@@ -188,14 +232,20 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_start", async (_event, _ctx) => {
     ctx = _ctx;
-    updateProvider(_ctx);
+    updateProviderFrom(_ctx.model);
+  });
+
+  pi.on("model_select", async (event, _ctx) => {
+    ctx = _ctx;
+    const changed = updateProviderFrom(event.model ?? _ctx.model);
+    if (changed) await poll();
   });
 
   pi.registerCommand("usage", {
     description: "Refresh API usage bars",
     handler: async (_args, _ctx) => {
       ctx = _ctx;
-      updateProvider(_ctx);
+      updateProviderFrom(_ctx.model);
       await poll();
       _ctx.ui.notify("Usage refreshed", "info");
     },

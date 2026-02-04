@@ -219,6 +219,20 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
+	const ensureTmuxSession = (sessionName: string): boolean => {
+		try {
+			execSync(`tmux has-session -t ${shellEscape(sessionName)}`, { stdio: "ignore" });
+			return true;
+		} catch {
+			try {
+				execSync(`tmux new-session -d -s ${shellEscape(sessionName)}`, { stdio: "ignore" });
+				return true;
+			} catch {
+				return false;
+			}
+		}
+	};
+
 	const runHeartbeatInTmux = (prompt: string): boolean => {
 		try {
 			execSync("command -v tmux", { stdio: "ignore" });
@@ -227,9 +241,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const sessionName = getTmuxSessionName();
-		try {
-			execSync(`tmux has-session -t ${shellEscape(sessionName)}`, { stdio: "ignore" });
-		} catch {
+		if (!ensureTmuxSession(sessionName)) {
 			return false;
 		}
 
@@ -242,7 +254,7 @@ export default function (pi: ExtensionAPI) {
 
 		const target = `${sessionName}:${HEARTBEAT_WINDOW_NAME}`;
 		const promptArg = `@${HEARTBEAT_PROMPT_FILE}`;
-		const command = `clear; RHO_SUBAGENT=1 pi -p --no-session ${shellEscape(promptArg)}; rm -f ${shellEscape(HEARTBEAT_PROMPT_FILE)}`;
+		const command = `clear; RHO_SUBAGENT=1 pi --no-session ${shellEscape(promptArg)}; rm -f ${shellEscape(HEARTBEAT_PROMPT_FILE)}`;
 
 		try {
 			if (!heartbeatWindowExists(sessionName)) {

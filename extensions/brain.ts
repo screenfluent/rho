@@ -249,20 +249,46 @@ function parseAutoMemoryResponse(text: string): AutoMemoryResponse | null {
   }
 }
 
-function buildAutoMemoryPrompt(conversationText: string): string {
-  return [
+function formatExistingMemories(entries: Entry[]): string {
+  const learnings = entries.filter((e): e is LearningEntry => e.type === "learning");
+  const preferences = entries.filter((e): e is PreferenceEntry => e.type === "preference");
+  const lines: string[] = [];
+  for (const l of learnings) lines.push(`- ${l.text}`);
+  for (const p of preferences) lines.push(`- [${p.category}] ${p.text}`);
+  return lines.join("\n");
+}
+
+function buildAutoMemoryPrompt(conversationText: string, existingMemories?: string): string {
+  const parts = [
     "You are a memory extraction system for a personal assistant.",
     "Extract durable learnings and user preferences that will remain useful across sessions.",
     "Only include stable facts or clear preferences. Skip one-off tasks, transient requests, and generic facts.",
     "Keep each entry concise (under 120 characters).",
+  ];
+
+  if (existingMemories) {
+    parts.push(
+      "",
+      "IMPORTANT: These memories are already stored. Do NOT extract anything that restates, overlaps with, or is a subset of these:",
+      "<existing_memories>",
+      existingMemories,
+      "</existing_memories>",
+      "",
+      "Only extract genuinely NEW information not covered above."
+    );
+  }
+
+  parts.push(
     "Output strict JSON only with this shape:",
     '{"learnings":[{"text":"..."}],"preferences":[{"category":"Communication|Code|Tools|Workflow|General","text":"..."}]}',
-    "If there are no items, return {\"learnings\":[],\"preferences\":[]}.",
+    "If there are no NEW items to add, return {\"learnings\":[],\"preferences\":[]}.",
     "",
     "<conversation>",
     conversationText,
-    "</conversation>",
-  ].join("\n");
+    "</conversation>"
+  );
+
+  return parts.join("\n");
 }
 
 async function runAutoMemoryExtraction(
@@ -284,7 +310,11 @@ async function runAutoMemoryExtraction(
     ctx.ui.notify("Auto-memory: extracting learnings...", "info");
   }
 
-  const prompt = buildAutoMemoryPrompt(conversationText);
+  // Feed existing memories so the LLM avoids duplicates
+  const existing = readJsonl<Entry>(MEMORY_FILE);
+  const existingText = existing.length > 0 ? formatExistingMemories(existing) : undefined;
+
+  const prompt = buildAutoMemoryPrompt(conversationText, existingText);
   const response = await complete(
     model,
     {
@@ -353,6 +383,177 @@ async function runAutoMemoryExtraction(
   }
 
   return { storedLearnings, storedPrefs };
+}
+
+// Memory consolidation
+type ConsolidationResponse = {
+  learnings: Array<{ id: string; text: string }>;
+  preferences: Array<{ id: string; category: string; text: string }>;
+};
+
+function buildConsolidationPrompt(entries: Entry[]): string {
+  const learnings = entries.filter((e): e is LearningEntry => e.type === "learning");
+  const preferences = entries.filter((e): e is PreferenceEntry => e.type === "preference");
+
+  let entriesText = "LEARNINGS:\n";
+  for (const l of learnings) {
+    entriesText += `[${l.id}] ${l.text}\n`;
+  }
+  entriesText += "\nPREFERENCES:\n";
+  for (const p of preferences) {
+    entriesText += `[${p.id}] [${p.category}] ${p.text}\n`;
+  }
+
+  return [
+    "You are a memory consolidation system. Deduplicate and consolidate these memory entries.",
+    "",
+    "Rules:",
+    "- Merge entries that express the same fact or preference into ONE clear entry.",
+    "- When merging, use the ID of the OLDEST entry in the group.",
+    "- Keep the most informative/complete version when merging.",
+    "- Remove entries that are strict subsets of other entries.",
+    "- Remove entries that are clearly obsolete or superseded.",
+    "- Do NOT invent new information — only consolidate what exists.",
+    "- Keep entries concise (under 200 characters).",
+    "- For preferences, preserve the category. If merging preferences with different categories, use the most specific one.",
+    "- Return ALL entries that should be kept — both merged and untouched ones.",
+    "",
+    entriesText,
+    "",
+    "Output strict JSON:",
+    '{"learnings":[{"id":"kept-id","text":"consolidated text"}],"preferences":[{"id":"kept-id","category":"...","text":"consolidated text"}]}',
+  ].join("\n");
+}
+
+function parseConsolidationResponse(text: string): ConsolidationResponse | null {
+  const jsonText = extractJsonObject(text);
+  if (!jsonText) return null;
+  try {
+    return JSON.parse(jsonText) as ConsolidationResponse;
+  } catch {
+    return null;
+  }
+}
+
+async function runConsolidation(
+  ctx: ExtensionContext,
+  options?: { signal?: AbortSignal; dryRun?: boolean }
+): Promise<{ before: number; after: number; removed: number } | null> {
+  const model = ctx.model;
+  if (!model) return null;
+
+  const apiKey = await ctx.modelRegistry.getApiKey(model);
+  if (!apiKey) return null;
+
+  const entries = readJsonl<Entry>(MEMORY_FILE);
+  if (entries.length < 5) return null; // Not enough to bother
+
+  const prompt = buildConsolidationPrompt(entries);
+
+  const response = await complete(
+    model,
+    {
+      messages: [
+        {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: prompt }],
+          timestamp: Date.now(),
+        },
+      ],
+    },
+    { apiKey, maxTokens: 4096, signal: options?.signal }
+  );
+
+  const responseText = response.content
+    .filter((c): c is { type: "text"; text: string } => c.type === "text")
+    .map((c) => c.text)
+    .join("\n")
+    .trim();
+
+  const parsed = parseConsolidationResponse(responseText);
+  if (!parsed) return null;
+
+  // Build a lookup of existing entries by ID for metadata preservation
+  const entryMap = new Map<string, Entry>();
+  for (const e of entries) entryMap.set(e.id, e);
+
+  const newEntries: Entry[] = [];
+
+  // Process consolidated learnings
+  for (const cl of parsed.learnings) {
+    const existing = entryMap.get(cl.id) as LearningEntry | undefined;
+    const normalized = normalizeMemoryText(cl.text);
+    if (!normalized) continue;
+
+    if (existing && existing.type === "learning") {
+      // Preserve metadata, update text
+      newEntries.push({
+        ...existing,
+        text: normalized,
+        last_used: today(),
+      });
+    } else {
+      // New consolidated entry (shouldn't happen often but handle it)
+      newEntries.push({
+        id: cl.id || nanoid(),
+        type: "learning",
+        text: normalized,
+        used: 0,
+        last_used: today(),
+        created: today(),
+      } as LearningEntry);
+    }
+  }
+
+  // Process consolidated preferences
+  for (const cp of parsed.preferences) {
+    const existing = entryMap.get(cp.id) as PreferenceEntry | undefined;
+    const normalized = normalizeMemoryText(cp.text);
+    if (!normalized) continue;
+
+    if (existing && existing.type === "preference") {
+      newEntries.push({
+        ...existing,
+        text: normalized,
+        category: sanitizeCategory(cp.category),
+      });
+    } else {
+      newEntries.push({
+        id: cp.id || nanoid(),
+        type: "preference",
+        category: sanitizeCategory(cp.category),
+        text: normalized,
+        created: today(),
+      } as PreferenceEntry);
+    }
+  }
+
+  const before = entries.length;
+  const after = newEntries.length;
+
+  if (options?.dryRun) {
+    return { before, after, removed: before - after };
+  }
+
+  // Safety: don't write if consolidation removed more than 60% (LLM might have hallucinated)
+  if (after < before * 0.4) {
+    return null; // Too aggressive, abort
+  }
+
+  // Archive removed entries before overwriting
+  const keptIds = new Set(newEntries.map((e) => e.id));
+  const removed = entries.filter((e) => !keptIds.has(e.id));
+  if (removed.length > 0) {
+    ensureDir();
+    for (const r of removed) {
+      appendJsonl(ARCHIVE_FILE, { ...r, archived: today(), reason: "consolidation" });
+    }
+  }
+
+  // Write consolidated memory
+  writeJsonl(MEMORY_FILE, newEntries);
+
+  return { before, after, removed: before - after };
 }
 
 // Bootstrap from defaults
@@ -553,9 +754,9 @@ export default function (pi: ExtensionAPI) {
     name: "memory",
     label: "Memory",
     description:
-      "Store learnings (corrections, patterns, conventions) or preferences (user likes/dislikes with category). Use after user corrections or when discovering something future sessions need. Actions: add_learning, add_preference, reinforce, search, list.",
+      "Store learnings (corrections, patterns, conventions) or preferences (user likes/dislikes with category). Use after user corrections or when discovering something future sessions need. Actions: add_learning, add_preference, reinforce, search, list, consolidate.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list"] as const),
+      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate"] as const),
       content: Type.Optional(Type.String({ description: "Concise, actionable text" })),
       category: Type.Optional(Type.String({ description: "Category: Communication, Code, Tools, Workflow, General" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
@@ -656,6 +857,34 @@ export default function (pi: ExtensionAPI) {
           return { content: [{ type: "text", text }], details: { learnings: learnings.length, preferences: prefs.length } };
         }
 
+        case "consolidate": {
+          try {
+            const result = await runConsolidation(ctx);
+            if (!result) {
+              return {
+                content: [{ type: "text", text: "Consolidation failed or not enough entries to consolidate." }],
+                details: { error: true },
+              };
+            }
+            updateBrainWidget(ctx);
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Consolidated: ${result.before} → ${result.after} entries (removed ${result.removed}). Removed entries archived.`,
+                },
+              ],
+              details: result,
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return {
+              content: [{ type: "text", text: `Consolidation error: ${message}` }],
+              details: { error: true },
+            };
+          }
+        }
+
         default:
           return { content: [{ type: "text", text: `Unknown action` }], details: { error: true } };
       }
@@ -690,8 +919,25 @@ export default function (pi: ExtensionAPI) {
           return false;
         });
         ctx.ui.notify(matches.length ? `Found ${matches.length} matches` : "No matches", "info");
+      } else if (subcmd === "consolidate") {
+        ctx.ui.notify("🧠 Consolidating memories...", "info");
+        try {
+          const result = await runConsolidation(ctx);
+          if (result) {
+            ctx.ui.notify(
+              `🧠 Consolidated: ${result.before} → ${result.after} (removed ${result.removed})`,
+              "info"
+            );
+            updateBrainWidget(ctx);
+          } else {
+            ctx.ui.notify("🧠 Consolidation failed or too few entries", "warning");
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`🧠 Error: ${message}`, "error");
+        }
       } else {
-        ctx.ui.notify("Usage: /brain [stats|search <query>]", "error");
+        ctx.ui.notify("Usage: /brain [stats|search <query>|consolidate]", "error");
       }
     },
   });
