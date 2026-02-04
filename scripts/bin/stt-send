@@ -1,0 +1,17 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Run STT and type result into the active tmux pane, then press Enter
+# Uses termux-dialog speech instead of termux-speech-to-text
+# to avoid the known last-word cutoff bug (termux-api #288)
+
+# Immediate haptic feedback so user knows the tap registered
+termux-vibrate -d 100 -f
+sleep 0.1
+
+result=$(termux-dialog speech -t "Speak" 2>/dev/null)
+text=$(echo "$result" | jq -r '.text // empty' 2>/dev/null)
+
+if [ -n "$text" ]; then
+    termux-vibrate -d 50 -f &
+    tmux send-keys -l "$text"
+    tmux send-keys Enter
+fi

@@ -1,0 +1,18 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Speech-to-text → clipboard + stdout
+# Usage: stt           (output to stdout)
+#        stt --paste   (also paste to clipboard)
+#        eval $(stt)   (capture as variable)
+
+result=$(termux-speech-to-text 2>/dev/null)
+text=$(echo "$result" | jq -r '.result // empty' 2>/dev/null)
+
+if [ -z "$text" ]; then
+    echo "No speech detected" >&2
+    exit 1
+fi
+
+# Always copy to clipboard
+echo -n "$text" | termux-clipboard-set 2>/dev/null
+
+echo "$text"
