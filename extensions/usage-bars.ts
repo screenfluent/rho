@@ -126,14 +126,13 @@ export default function (pi: ExtensionAPI) {
   async function poll() {
     const auth = readAuth();
     if (!auth) return;
-    const promises: Promise<void>[] = [];
-    if (auth["openai-codex"]?.access) {
-      promises.push(fetchCodexUsage(auth["openai-codex"].access).then((r) => { state.codex = r; }));
+    const active = state.activeProvider;
+    // Only fetch usage for the active provider
+    if (active === "codex" && auth["openai-codex"]?.access) {
+      state.codex = await fetchCodexUsage(auth["openai-codex"].access);
+    } else if (active === "claude" && auth.anthropic?.access) {
+      state.claude = await fetchClaudeUsage(auth.anthropic.access);
     }
-    if (auth.anthropic?.access) {
-      promises.push(fetchClaudeUsage(auth.anthropic.access).then((r) => { state.claude = r; }));
-    }
-    await Promise.allSettled(promises);
     state.lastPoll = Date.now();
     updateWidget();
   }
@@ -170,11 +169,6 @@ export default function (pi: ExtensionAPI) {
     const active = state.activeProvider;
     if (active === "codex" && state.codex) return [renderProviderLine("Codex ", state.codex, theme)];
     if (active === "claude" && state.claude) return [renderProviderLine("Claude", state.claude, theme)];
-    if (state.codex && !state.claude) return [renderProviderLine("Codex ", state.codex, theme)];
-    if (state.claude && !state.codex) return [renderProviderLine("Claude", state.claude, theme)];
-    if (state.codex && state.claude) {
-      return [renderProviderLine("Codex ", state.codex, theme), renderProviderLine("Claude", state.claude, theme)];
-    }
     return [];
   }
 
