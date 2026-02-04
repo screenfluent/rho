@@ -12,6 +12,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-agent";
 import { StringEnum, complete } from "@mariozechner/pi-ai";
+import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import * as fs from "node:fs";
@@ -38,6 +39,35 @@ const AUTO_MEMORY_ALLOWED_CATEGORIES = new Set(["Communication", "Code", "Tools"
 // Feature flags
 const DAILY_MEMORY_ENABLED = process.env.RHO_DAILY_MEMORY !== "0";
 const COMPACT_MEMORY_FLUSH_ENABLED = process.env.RHO_COMPACT_MEMORY_FLUSH !== "0";
+
+// Small model candidates for memory extraction/consolidation (cheapest first)
+const SMALL_MODEL_CANDIDATES: Array<{ provider: string; modelId: string }> = [
+  { provider: "google-antigravity", modelId: "gemini-3-flash" },
+  { provider: "anthropic", modelId: "claude-haiku-4-5" },
+];
+
+/**
+ * Resolve a small/cheap model for background tasks (memory extraction, consolidation).
+ * Falls back to ctx.model if no small model has auth configured.
+ */
+async function resolveSmallModel(
+  ctx: ExtensionContext
+): Promise<{ model: Model<Api>; apiKey: string } | null> {
+  for (const candidate of SMALL_MODEL_CANDIDATES) {
+    const model = ctx.modelRegistry.find(candidate.provider, candidate.modelId);
+    if (!model) continue;
+    const apiKey = await ctx.modelRegistry.getApiKey(model);
+    if (apiKey) {
+      return { model, apiKey };
+    }
+  }
+  // Fallback: use the current session model
+  const model = ctx.model;
+  if (!model) return null;
+  const apiKey = await ctx.modelRegistry.getApiKey(model);
+  if (!apiKey) return null;
+  return { model, apiKey };
+}
 
 // Types
 interface BaseEntry {
@@ -297,17 +327,16 @@ async function runAutoMemoryExtraction(
   options?: { source?: string; signal?: AbortSignal; maxItems?: number; maxText?: number }
 ): Promise<{ storedLearnings: number; storedPrefs: number } | null> {
   if (!AUTO_MEMORY_ENABLED) return null;
-  const model = ctx.model;
-  if (!model) return null;
 
-  const apiKey = await ctx.modelRegistry.getApiKey(model);
-  if (!apiKey) return null;
+  const resolved = await resolveSmallModel(ctx);
+  if (!resolved) return null;
+  const { model, apiKey } = resolved;
 
   const conversationText = serializeConversation(convertToLlm(messages));
   if (!conversationText.trim()) return null;
 
   if (AUTO_MEMORY_DEBUG && ctx.hasUI) {
-    ctx.ui.notify("Auto-memory: extracting learnings...", "info");
+    ctx.ui.notify(`Auto-memory: extracting via ${model.name}...`, "info");
   }
 
   // Feed existing memories so the LLM avoids duplicates
@@ -439,14 +468,16 @@ async function runConsolidation(
   ctx: ExtensionContext,
   options?: { signal?: AbortSignal; dryRun?: boolean }
 ): Promise<{ before: number; after: number; removed: number } | null> {
-  const model = ctx.model;
-  if (!model) return null;
-
-  const apiKey = await ctx.modelRegistry.getApiKey(model);
-  if (!apiKey) return null;
+  const resolved = await resolveSmallModel(ctx);
+  if (!resolved) return null;
+  const { model, apiKey } = resolved;
 
   const entries = readJsonl<Entry>(MEMORY_FILE);
   if (entries.length < 5) return null; // Not enough to bother
+
+  if (AUTO_MEMORY_DEBUG) {
+    console.error(`Consolidation using: ${model.name} (${model.provider})`);
+  }
 
   const prompt = buildConsolidationPrompt(entries);
 
@@ -920,7 +951,7 @@ export default function (pi: ExtensionAPI) {
         });
         ctx.ui.notify(matches.length ? `Found ${matches.length} matches` : "No matches", "info");
       } else if (subcmd === "consolidate") {
-        ctx.ui.notify("🧠 Consolidating memories...", "info");
+        ctx.ui.notify("🧠 Consolidating memories (small model)...", "info");
         try {
           const result = await runConsolidation(ctx);
           if (result) {
