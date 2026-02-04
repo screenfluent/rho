@@ -73,12 +73,11 @@ flowchart TD
     H --> J[agent run]
     I --> J
     J --> K[agent_end]
-    K --> L[read heartbeats.jsonl]
-    L --> M{alert?}
-    M -->|yes| N[notify user]
-    M -->|no| O[no alert]
+    K --> L{RHO_OK?}
+    L -->|yes| M[notify OK + update status]
+    L -->|no| N[alert response + update status]
+    M --> E
     N --> E
-    O --> E
 ```
 
 **Commands:**
