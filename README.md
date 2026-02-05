@@ -78,6 +78,20 @@ The **heartbeat** checks in periodically (default: every 30 min). Each check-in 
 
 The **brain** persists across sessions. Learnings, preferences, and context accumulate in `~/.rho/brain/`.
 
+**Agent email** gives your agent a real email address at `name@runrho.dev`. People and services can email your agent directly. The agent polls its inbox, reads messages, and can reply. Free tier gets receive + 1 outbound email per hour. Register with:
+
+```
+Ask your agent: "Set up my agent email at <name>@runrho.dev"
+```
+
+Or use the `/email` command once registered:
+
+```
+/email check        Poll inbox for new mail
+/email list         Show unread messages
+/email send <to> <subject>   Send a quick email
+```
+
 **Skills** are capability packages the agent loads on demand. The installer detects your OS and installs the right ones. Notifications, clipboard, and text-to-speech work on every platform. Android gets SMS, speech-to-text, camera, GPS, and Tasker automation on top of that.
 
 ### Skills
@@ -96,6 +110,7 @@ The **brain** persists across sessions. Learnings, preferences, and context accu
 | `device` | ✓ | | | Battery, torch, vibration |
 | `dialog` | ✓ | | | Interactive input dialogs |
 | `tasker-xml` | ✓ | | | Create Tasker automations |
+| `rho-cloud-onboard` | ✓ | ✓ | ✓ | Register an agent email address |
 | `update-pi` | ✓ | ✓ | ✓ | Update pi to latest version |
 
 ### Extensions
@@ -108,6 +123,7 @@ The **brain** persists across sessions. Learnings, preferences, and context accu
 | `memory-viewer.ts` | All | Browse and search memories |
 | `usage-bars.ts` | All | Token/cost usage display |
 | `moltbook-viewer.ts` | All | Moltbook post viewer |
+| `email.ts` | All | Agent inbox at name@runrho.dev |
 | `tasker.ts` | Android | UI automation via Tasker |
 
 ### Skills vs extensions
