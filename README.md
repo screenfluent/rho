@@ -1,22 +1,31 @@
 # rho
 
-An AI agent that lives on your phone. Not a cloud service, not a browser tab -- a persistent agent running in your pocket with memory, a heartbeat, and the ability to see and touch your screen.
+A persistent AI agent with memory, a heartbeat, and platform-native capabilities. Runs on macOS, Linux, and Android.
+
+Not a cloud service, not a browser tab -- an agent that lives where you do, remembers what you told it yesterday, and checks in on its own.
 
 Built on [pi coding agent](https://github.com/badlogic/pi-mono).
 
 ![Rho demo](docs/demo.gif)
 
-## Install
+## Quick Start
 
-Prerequisites: [Termux](https://f-droid.org/packages/com.termux/) and [Termux:API](https://f-droid.org/packages/com.termux.api/) from F-Droid.
-
-Then one command:
+### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mikeyobrien/rho/main/bootstrap.sh | bash
+git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
+cd ~/projects/rho && ./install.sh
 ```
 
-This installs everything: Node.js, pi, rho extensions, skills, brain, and walks you through API key setup.
+Prerequisites: Node.js (18+), tmux, git. The installer checks and tells you what's missing.
+
+### Android (Termux)
+
+Install [Termux](https://f-droid.org/packages/com.termux/) and [Termux:API](https://f-droid.org/packages/com.termux.api/) from F-Droid, then:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mikeyobrien/rho/main/platforms/android/bootstrap.sh | bash
+```
 
 Or step by step:
 
@@ -45,15 +54,52 @@ Inside a session:
 /rho enable/disable   Toggle heartbeat
 ```
 
-## What it does
+## What You Get
 
-**Heartbeat**: Rho checks in periodically (default: 30 min). Each check-in reads your `~/RHO.md` checklist and `~/HEARTBEAT.md` scheduled tasks, runs what needs running, and reports back.
+These work on every platform:
 
-**Memory**: Persistent brain across sessions. Learnings, preferences, and context accumulate over time in `~/.pi/brain/`. Your agent remembers what you told it yesterday.
+**Heartbeat** -- Rho checks in periodically (default: 30 min). Each check-in reads your `~/RHO.md` checklist and `~/HEARTBEAT.md` scheduled tasks, runs what needs running, and reports back.
 
-**Tasker integration** *(optional)*: With [Tasker](https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm) installed, your agent can read screens, tap buttons, open apps, scroll, and type. It can use your phone like you do.
+**Memory** -- Persistent brain across sessions. Learnings, preferences, and context accumulate over time in `~/.pi/brain/`. Your agent remembers what you told it yesterday.
 
-**Skills**: On-demand capability packages for common tasks -- clipboard, notifications, SMS, camera, speech-to-text, location, and more. The agent loads them when needed.
+**Skills** -- On-demand capability packages the agent loads when needed. Core skills work everywhere; platform skills give native access to notifications, clipboard, speech, and more.
+
+## Platform Capabilities
+
+The installer detects your OS and installs the right skills automatically.
+
+### Skills by Platform
+
+| Skill | Android | macOS | Linux | Description |
+|-------|:-------:|:-----:|:-----:|-------------|
+| `notification` | ✓ | ✓ | ✓ | System notifications |
+| `clipboard` | ✓ | ✓ | ✓ | Clipboard read/write |
+| `tts` | ✓ | ✓ | ✓ | Text-to-speech |
+| `open-url` | ✓ | ✓ | ✓ | Open URLs and apps |
+| `sms` | ✓ | | | Read and send SMS |
+| `stt` | ✓ | | | Speech-to-text |
+| `media` | ✓ | | | Audio, camera, recording |
+| `location` | ✓ | | | GPS/network location |
+| `contacts` | ✓ | | | Contact lookup |
+| `device` | ✓ | | | Battery, torch, vibration |
+| `dialog` | ✓ | | | Interactive input dialogs |
+| `tasker-xml` | ✓ | | | Create Tasker automations |
+| `code-assist` | ✓ | ✓ | ✓ | TDD-based code implementation |
+| `pdd` | ✓ | ✓ | ✓ | Prompt-driven design documents |
+| `rho-validate` | ✓ | ✓ | ✓ | Validate rho installation |
+| `update-pi` | ✓ | ✓ | ✓ | Update pi to latest version |
+
+### Extensions by Platform
+
+| Extension | Platforms | Description |
+|-----------|-----------|-------------|
+| `rho.ts` | All | Heartbeat, check-ins, continuous presence |
+| `brain.ts` | All | Persistent memory across sessions |
+| `brave-search.ts` | All | Web search via Brave API |
+| `memory-viewer.ts` | All | Browse and search memories |
+| `usage-bars.ts` | All | Token/cost usage display |
+| `moltbook-viewer.ts` | All | Moltbook post viewer |
+| `tasker.ts` | Android | UI automation via Tasker |
 
 ## Customize
 
@@ -106,41 +152,12 @@ The brain lives at `~/.pi/brain/`:
 
 Use the `memory` tool or `/brain` command to interact with it.
 
-## Extensions
-
-| Extension | What it does |
-|-----------|-------------|
-| `rho.ts` | Heartbeat, check-ins, continuous presence |
-| `brain.ts` | Persistent memory across sessions |
-| `brave-search.ts` | Web search via Brave API |
-| `tasker.ts` | Android UI automation via Tasker |
-
-## Skills
-
-Rho comes with skills for common Android tasks. The agent loads them on demand:
-
-| Skill | Capability |
-|-------|-----------|
-| `termux-notification` | System notifications with buttons |
-| `termux-sms` | Read and send SMS |
-| `termux-stt` | Speech-to-text |
-| `termux-tts` | Text-to-speech |
-| `termux-clipboard` | Clipboard read/write |
-| `termux-media` | Audio, camera, recording |
-| `termux-location` | GPS/network location |
-| `termux-contacts` | Contact lookup |
-| `termux-device` | Battery, torch, vibration |
-| `termux-dialog` | Interactive input dialogs |
-| `tasker-xml` | Create Tasker automations |
-| `code-assist` | TDD-based code implementation |
-| `pdd` | Prompt-driven design documents |
-
-## Tasker setup (optional)
+## Tasker Setup (Android, optional)
 
 For UI automation (reading screens, tapping elements, controlling apps):
 
 1. Install [Tasker](https://play.google.com/store/apps/details?id=net.dinglisch.android.taskerm) and [AutoInput](https://play.google.com/store/apps/details?id=com.joaomgcd.autoinput)
-2. In Tasker: long-press home icon → Import Project → select `tasker/Rho.prj.xml`
+2. In Tasker: long-press home icon > Import Project > select `tasker/Rho.prj.xml`
 3. Enable the imported profiles
 
 Optional (screenshot without permission dialog):
@@ -151,23 +168,69 @@ adb connect <ip>:<port>
 adb shell appops set net.dinglisch.android.taskerm PROJECT_MEDIA allow
 ```
 
-## Project structure
+## Project Structure
 
 ```
 rho/
-├── extensions/         # Pi extensions (heartbeat, memory, search, tasker)
-├── skills/             # On-demand capability packages
-├── scripts/            # Daemon management (rho, rho-daemon, rho-stop, etc.)
-├── tasker/             # Importable Tasker profiles
-├── brain/              # Default brain files
-├── bootstrap.sh        # One-command installer
-├── install.sh          # Setup script (symlinks, templates, brain)
-├── AGENTS.md.template  # Agent operating principles template
-├── RHO.md.template     # Check-in checklist template
-└── HEARTBEAT.md.template # Scheduled tasks template
+├── extensions/              # Core extensions (all platforms)
+│   ├── brain.ts
+│   ├── brave-search.ts
+│   ├── memory-viewer.ts
+│   ├── moltbook-viewer.ts
+│   ├── rho.ts
+│   └── usage-bars.ts
+├── skills/                  # Core skills (all platforms)
+│   ├── code-assist/
+│   ├── pdd/
+│   ├── rho-validate/
+│   └── update-pi/
+├── platforms/
+│   ├── android/
+│   │   ├── extensions/      # tasker.ts
+│   │   ├── skills/          # notification, clipboard, sms, stt, tts, ...
+│   │   ├── scripts/bin/     # stt, stt-send
+│   │   └── bootstrap.sh     # One-command Termux installer
+│   ├── macos/
+│   │   ├── skills/          # notification, clipboard, open-url, tts
+│   │   └── setup.sh         # Dependency checker
+│   └── linux/
+│       ├── skills/          # notification, clipboard, open-url, tts
+│       └── setup.sh         # Dependency checker
+├── scripts/                 # Daemon management
+│   ├── rho                  # Start/attach
+│   ├── rho-daemon           # Background daemon
+│   ├── rho-status           # Status check
+│   ├── rho-stop             # Stop daemon
+│   └── rho-trigger          # Trigger check-in
+├── brain/                   # Default brain files
+├── tasker/                  # Importable Tasker profiles (Android)
+├── install.sh               # Cross-platform installer
+├── AGENTS.md.template       # Agent operating principles
+├── RHO.md.template          # Check-in checklist
+├── HEARTBEAT.md.template    # Scheduled tasks
+└── SOUL.md.template         # Personality/voice
 ```
 
-## Environment variables
+## Configuration
+
+The installer writes `~/.config/rho/config` with:
+
+```bash
+RHO_DIR=/path/to/rho          # Where the repo lives
+RHO_PLATFORM=android|macos|linux  # Detected platform
+```
+
+Scripts source this file at startup. You can override values manually.
+
+## Adding a New Platform
+
+1. Create `platforms/<name>/skills/` with SKILL.md files for platform-native capabilities
+2. Optionally create `platforms/<name>/extensions/` for platform-specific extensions
+3. Optionally create `platforms/<name>/setup.sh` to check/install dependencies
+4. Add a detection case in `install.sh` (`detect_platform` function)
+5. Submit a PR
+
+## Environment Variables
 
 ```bash
 BRAVE_API_KEY="..."     # For web search (optional)

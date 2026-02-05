@@ -2,15 +2,15 @@
 
 ## Checklist
 
-- [ ] Step 1: Create platforms/ directory structure and move Android files
-- [ ] Step 2: Rename Android skills to generic names
-- [ ] Step 3: Write macOS platform skills
-- [ ] Step 4: Write Linux platform skills
-- [ ] Step 5: Create Android open-url skill
-- [ ] Step 6: Rewrite install.sh with OS-aware logic
-- [ ] Step 7: Add config file support to scripts
-- [ ] Step 8: Write platform setup.sh scripts
-- [ ] Step 9: Update README.md
+- [x] Step 1: Create platforms/ directory structure and move Android files
+- [x] Step 2: Rename Android skills to generic names
+- [x] Step 3: Write macOS platform skills
+- [x] Step 4: Write Linux platform skills
+- [x] Step 5: Create Android open-url skill
+- [x] Step 6: Rewrite install.sh with OS-aware logic
+- [x] Step 7: Add config file support to scripts
+- [x] Step 8: Write platform setup.sh scripts
+- [x] Step 9: Update README.md
 - [ ] Step 10: End-to-end testing and migration verification
 
 ---
