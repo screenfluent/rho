@@ -1,14 +1,25 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Rho Daemon - Keep pi running in background with check-ins
+
+# Source rho config
+if [ -f "$HOME/.config/rho/config" ]; then
+  . "$HOME/.config/rho/config"
+fi
+RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
+RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
 
 SESSION_NAME="rho"
 PIDFILE="$HOME/.rho-daemon.pid"
 
-# Acquire wake lock (prevents doze mode)
-termux-wake-lock
+# Android: acquire wake lock to prevent doze mode
+if [ "$RHO_PLATFORM" = "android" ]; then
+    termux-wake-lock 2>/dev/null
+fi
 
 cleanup() {
-    termux-wake-unlock 2>/dev/null
+    if [ "$RHO_PLATFORM" = "android" ]; then
+        termux-wake-unlock 2>/dev/null
+    fi
     rm -f "$PIDFILE"
     exit 0
 }
@@ -26,24 +37,25 @@ else
     # Create new detached tmux session running pi
     # The rho extension will auto-load
     tmux new-session -d -s "$SESSION_NAME" -c "$HOME" "pi -c"
-    
-    # Optionally send notification
-    if command -v termux-notification >/dev/null; then
+
+    # Android: persistent notification with actions
+    if [ "$RHO_PLATFORM" = "android" ] && command -v termux-notification >/dev/null 2>&1; then
+        TMUX_BIN="$(command -v tmux)"
         termux-notification \
             --title "Rho Daemon" \
             --content "Check-ins active (30m)" \
             --id rho-daemon \
             --ongoing \
-            --action "/data/data/com.termux/files/usr/bin/tmux attach -t rho" \
+            --action "$TMUX_BIN attach -t rho" \
             --button1 "Check Now" \
-            --button1-action "/data/data/com.termux/files/usr/bin/tmux send-keys -t rho '/rho now' Enter"
+            --button1-action "$TMUX_BIN send-keys -t rho '/rho now' Enter"
     fi
-    
+
     echo "Rho running in tmux session: $SESSION_NAME"
     echo "Attach with: tmux attach -t $SESSION_NAME"
 fi
 
-# Keep script alive to hold wake lock
+# Keep script alive (holds wake lock on Android, monitors session everywhere)
 while true; do
     # Check if tmux session still alive
     if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then

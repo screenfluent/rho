@@ -1,5 +1,12 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Check rho daemon status
+
+# Source rho config
+if [ -f "$HOME/.config/rho/config" ]; then
+  . "$HOME/.config/rho/config"
+fi
+RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
+RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
 
 SESSION_NAME="rho"
 
@@ -10,4 +17,7 @@ fi
 
 # Get last lines of pi session to see status
 echo "=== Rho Status ==="
+echo "Platform: $RHO_PLATFORM"
+echo "RHO_DIR:  $RHO_DIR"
+echo ""
 tmux capture-pane -t "$SESSION_NAME" -p | tail -20

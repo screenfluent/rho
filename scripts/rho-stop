@@ -1,5 +1,12 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Stop the rho daemon
+
+# Source rho config
+if [ -f "$HOME/.config/rho/config" ]; then
+  . "$HOME/.config/rho/config"
+fi
+RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
+RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
 
 SESSION_NAME="rho"
 PIDFILE="$HOME/.rho-daemon.pid"
@@ -15,10 +22,10 @@ if [ -f "$PIDFILE" ]; then
     rm -f "$PIDFILE"
 fi
 
-# Release wake lock
-termux-wake-unlock 2>/dev/null
-
-# Remove notification
-termux-notification-remove rho-daemon 2>/dev/null || true
+# Android: release wake lock and remove notification
+if [ "$RHO_PLATFORM" = "android" ]; then
+    termux-wake-unlock 2>/dev/null
+    termux-notification-remove rho-daemon 2>/dev/null || true
+fi
 
 echo "Rho daemon stopped"
