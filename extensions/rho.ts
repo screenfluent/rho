@@ -14,9 +14,11 @@
  *   /rho disable          - Disable rho check-ins
  *   /rho now              - Trigger a check-in immediately
  *   /rho interval 30m     - Set interval (e.g., 30m, 1h, 0 to disable)
+ *   /rho model auto       - Auto-resolve cheapest model for heartbeat
+ *   /rho model <p>/<m>    - Pin a specific model for heartbeat
  *
  * The LLM can also use tools:
- *   - rho_control(action: "enable" | "disable" | "trigger" | "interval", interval?: string)
+ *   - rho_control(action: "enable" | "disable" | "trigger" | "interval" | "model", interval?: string, model?: string)
  *   - rho_status()
  */
 
@@ -35,16 +37,28 @@ interface RhoState {
 	lastCheckAt: number | null;
 	nextCheckAt: number | null;
 	checkCount: number;
+	heartbeatModel: string | null; // null = auto-resolve, "provider/model" = pinned
+}
+
+// Cached result of auto-resolved heartbeat model (not persisted)
+interface ResolvedModel {
+	provider: string;
+	model: string;
+	cost: number; // output cost per M tokens
+	resolvedAt: number;
 }
 
 interface RhoDetails {
-	action: "enable" | "disable" | "trigger" | "interval" | "status";
+	action: "enable" | "disable" | "trigger" | "interval" | "status" | "model";
 	intervalMs?: number;
 	enabled?: boolean;
 	lastCheckAt?: number | null;
 	nextCheckAt?: number | null;
 	checkCount?: number;
 	wasTriggered?: boolean;
+	heartbeatModel?: string | null;
+	heartbeatModelSource?: "auto" | "pinned";
+	heartbeatModelCost?: number;
 }
 
 const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -82,15 +96,72 @@ export default function (pi: ExtensionAPI) {
 		lastCheckAt: null,
 		nextCheckAt: null,
 		checkCount: 0,
+		heartbeatModel: null,
 	};
 
 	let timer: NodeJS.Timeout | null = null;
+	let cachedModel: ResolvedModel | null = null;
+	const MODEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 	const normalizeInterval = (value: unknown): number => {
 		if (typeof value !== "number" || Number.isNaN(value)) return DEFAULT_INTERVAL_MS;
 		if (value === 0) return 0;
 		if (value < MIN_INTERVAL_MS || value > MAX_INTERVAL_MS) return DEFAULT_INTERVAL_MS;
 		return Math.floor(value);
+	};
+
+	/**
+	 * Resolve the cheapest available model across all providers for heartbeat use.
+	 * Returns provider/model strings suitable for --provider and --model CLI flags.
+	 * Returns null if resolution fails (caller should omit flags and use pi defaults).
+	 */
+	const resolveHeartbeatModel = async (ctx: ExtensionContext): Promise<ResolvedModel | null> => {
+		// If pinned, parse and return the pinned model
+		if (state.heartbeatModel) {
+			const parts = state.heartbeatModel.split("/");
+			if (parts.length === 2) {
+				// Verify the pinned model still has auth
+				const model = ctx.modelRegistry.find(parts[0], parts[1]);
+				if (model) {
+					const apiKey = await ctx.modelRegistry.getApiKey(model);
+					if (apiKey) {
+						return { provider: parts[0], model: parts[1], cost: model.cost.output, resolvedAt: Date.now() };
+					}
+				}
+				// Pinned model unavailable -- fall through to auto-resolve
+			}
+		}
+
+		// Use cache if fresh
+		if (cachedModel && (Date.now() - cachedModel.resolvedAt) < MODEL_CACHE_TTL_MS) {
+			return cachedModel;
+		}
+
+		try {
+			// Get all models with valid auth, sorted by output cost (cheapest first)
+			const available = ctx.modelRegistry.getAvailable();
+			if (!available.length) return null;
+
+			const sorted = [...available].sort((a, b) => a.cost.output - b.cost.output);
+
+			// Try cheapest models until we find one with a working API key
+			for (const candidate of sorted) {
+				const apiKey = await ctx.modelRegistry.getApiKey(candidate);
+				if (apiKey) {
+					cachedModel = {
+						provider: candidate.provider,
+						model: candidate.id,
+						cost: candidate.cost.output,
+						resolvedAt: Date.now(),
+					};
+					return cachedModel;
+				}
+			}
+		} catch {
+			// Model resolution failed -- not critical
+		}
+
+		return null;
 	};
 
 	const loadStateFromDisk = () => {
@@ -102,6 +173,9 @@ export default function (pi: ExtensionAPI) {
 			if (typeof parsed.lastCheckAt === "number") state.lastCheckAt = parsed.lastCheckAt;
 			if (typeof parsed.nextCheckAt === "number") state.nextCheckAt = parsed.nextCheckAt;
 			if (typeof parsed.checkCount === "number" && parsed.checkCount >= 0) state.checkCount = parsed.checkCount;
+			if (parsed.heartbeatModel === null || typeof parsed.heartbeatModel === "string") {
+				state.heartbeatModel = parsed.heartbeatModel;
+			}
 		} catch {
 			// Ignore missing or invalid state
 		}
@@ -121,6 +195,7 @@ export default function (pi: ExtensionAPI) {
 						lastCheckAt: state.lastCheckAt,
 						nextCheckAt: state.nextCheckAt,
 						checkCount: state.checkCount,
+						heartbeatModel: state.heartbeatModel,
 					},
 					null,
 					2
@@ -147,6 +222,7 @@ export default function (pi: ExtensionAPI) {
 				if (details.lastCheckAt !== undefined) state.lastCheckAt = details.lastCheckAt;
 				if (details.nextCheckAt !== undefined) state.nextCheckAt = details.nextCheckAt;
 				if (details.checkCount !== undefined) state.checkCount = details.checkCount;
+				if (details.heartbeatModel !== undefined) state.heartbeatModel = details.heartbeatModel;
 			}
 		}
 	};
@@ -233,7 +309,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	};
 
-	const runHeartbeatInTmux = (prompt: string): boolean => {
+	const runHeartbeatInTmux = (prompt: string, modelFlags?: string): boolean => {
 		try {
 			execSync("command -v tmux", { stdio: "ignore" });
 		} catch {
@@ -254,7 +330,8 @@ export default function (pi: ExtensionAPI) {
 
 		const target = `${sessionName}:${HEARTBEAT_WINDOW_NAME}`;
 		const promptArg = `@${HEARTBEAT_PROMPT_FILE}`;
-		const command = `clear; RHO_SUBAGENT=1 pi --no-session ${shellEscape(promptArg)}; rm -f ${shellEscape(HEARTBEAT_PROMPT_FILE)}`;
+		const flags = modelFlags ? ` ${modelFlags}` : "";
+		const command = `clear; RHO_SUBAGENT=1 pi --no-session${flags} ${shellEscape(promptArg)}; rm -f ${shellEscape(HEARTBEAT_PROMPT_FILE)}`;
 
 		try {
 			if (!heartbeatWindowExists(sessionName)) {
@@ -332,6 +409,24 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	/**
+	 * Build --provider/--model/--thinking CLI flags for the heartbeat subagent.
+	 * Returns empty string if model resolution fails (pi will use its defaults).
+	 */
+	const buildModelFlags = async (ctx: ExtensionContext): Promise<string> => {
+		try {
+			const resolved = await resolveHeartbeatModel(ctx);
+			if (!resolved) return "";
+
+			let flags = `--provider ${shellEscape(resolved.provider)} --model ${shellEscape(resolved.model)}`;
+			// Always disable thinking for heartbeat to minimize cost
+			flags += " --thinking off";
+			return flags;
+		} catch {
+			return "";
+		}
+	};
+
+	/**
 	 * Trigger a check-in immediately
 	 */
 	const triggerCheck = (ctx: ExtensionContext) => {
@@ -364,11 +459,20 @@ export default function (pi: ExtensionAPI) {
 			fullPrompt += `\n\n---\n\nHEARTBEAT.md content:\n${heartbeatMd}`;
 		}
 
-		const sentToTmux = runHeartbeatInTmux(fullPrompt);
-		if (!sentToTmux) {
-			// Send as user message (appears as system event style)
-			pi.sendUserMessage(fullPrompt, { deliverAs: "followUp" });
-		}
+		// Resolve cheapest model async, then dispatch
+		buildModelFlags(ctx).then((modelFlags) => {
+			const sentToTmux = runHeartbeatInTmux(fullPrompt, modelFlags || undefined);
+			if (!sentToTmux) {
+				// Send as user message (appears as system event style)
+				pi.sendUserMessage(fullPrompt, { deliverAs: "followUp" });
+			}
+		}).catch(() => {
+			// Fallback: no model flags
+			const sentToTmux = runHeartbeatInTmux(fullPrompt);
+			if (!sentToTmux) {
+				pi.sendUserMessage(fullPrompt, { deliverAs: "followUp" });
+			}
+		});
 
 		// Schedule next
 		scheduleNext(ctx);
@@ -455,10 +559,11 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "rho_control",
 		label: "Rho",
-		description: "Control the rho check-in system. Actions: enable, disable, trigger (immediate), status (get info), interval (set with interval string like '30m' or '1h')",
+		description: "Control the rho check-in system. Actions: enable, disable, trigger (immediate), status (get info), interval (set with interval string like '30m' or '1h'), model (set heartbeat model: 'auto' or 'provider/model-id')",
 		parameters: Type.Object({
-			action: StringEnum(["enable", "disable", "trigger", "status", "interval"] as const),
+			action: StringEnum(["enable", "disable", "trigger", "status", "interval", "model"] as const),
 			interval: Type.Optional(Type.String({ description: "Interval string for 'interval' action (e.g., '30m', '1h', '15min'). Use '0' to disable." })),
+			model: Type.Optional(Type.String({ description: "Model for 'model' action. 'auto' to auto-resolve cheapest, or 'provider/model-id' to pin." })),
 		}),
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -549,9 +654,30 @@ export default function (pi: ExtensionAPI) {
 						join(ctx.cwd, ".pi", "RHO.md"),
 						join(ctx.cwd, ".rho.md"),
 					]);
+
+					// Resolve heartbeat model for display
+					let hbModelText = "auto (resolving...)";
+					let hbModelSource: "auto" | "pinned" = "auto";
+					let hbModelCost: number | undefined;
+					try {
+						const resolved = await resolveHeartbeatModel(ctx);
+						if (state.heartbeatModel) {
+							hbModelSource = "pinned";
+							hbModelText = `${state.heartbeatModel} (pinned)`;
+						} else if (resolved) {
+							hbModelText = `${resolved.provider}/${resolved.model} (auto, $${resolved.cost}/M output)`;
+						} else {
+							hbModelText = "default (no cheaper model found)";
+						}
+						if (resolved) hbModelCost = resolved.cost;
+					} catch {
+						hbModelText = "auto (resolution failed)";
+					}
+
 					let text = `Rho status:\n`;
 					text += `- Enabled: ${state.enabled}\n`;
 					text += `- Interval: ${formatInterval(state.intervalMs)}\n`;
+					text += `- Heartbeat model: ${hbModelText}\n`;
 					text += `- Total check-ins this session: ${state.checkCount}\n`;
 					if (state.lastCheckAt) {
 						const ago = Math.floor((Date.now() - state.lastCheckAt) / (60 * 1000));
@@ -574,6 +700,68 @@ export default function (pi: ExtensionAPI) {
 							lastCheckAt: state.lastCheckAt,
 							nextCheckAt: state.nextCheckAt,
 							checkCount: state.checkCount,
+							heartbeatModel: state.heartbeatModel,
+							heartbeatModelSource: hbModelSource,
+							heartbeatModelCost: hbModelCost,
+						} as RhoDetails,
+					};
+				}
+
+				case "model": {
+					const modelArg = params.model?.trim();
+					if (!modelArg) {
+						const source = state.heartbeatModel ? "pinned" : "auto";
+						return {
+							content: [{ type: "text", text: `Heartbeat model: ${state.heartbeatModel || "auto"} (${source})` }],
+							details: {
+								action: "model",
+								heartbeatModel: state.heartbeatModel,
+								heartbeatModelSource: source,
+							} as RhoDetails,
+						};
+					}
+
+					if (modelArg === "auto") {
+						state.heartbeatModel = null;
+						cachedModel = null;
+						saveStateToDisk();
+						return {
+							content: [{ type: "text", text: "Heartbeat model set to auto (cheapest available)" }],
+							details: {
+								action: "model",
+								heartbeatModel: null,
+								heartbeatModelSource: "auto",
+							} as RhoDetails,
+						};
+					}
+
+					// Validate provider/model format
+					const parts = modelArg.split("/");
+					if (parts.length !== 2) {
+						return {
+							content: [{ type: "text", text: `Error: Model must be 'provider/model-id' or 'auto'. Got: '${modelArg}'` }],
+							details: { action: "model" } as RhoDetails,
+						};
+					}
+
+					// Verify model exists
+					const model = ctx.modelRegistry.find(parts[0], parts[1]);
+					if (!model) {
+						return {
+							content: [{ type: "text", text: `Error: Model '${modelArg}' not found. Use --list-models to see available models.` }],
+							details: { action: "model" } as RhoDetails,
+						};
+					}
+
+					state.heartbeatModel = modelArg;
+					saveStateToDisk();
+					return {
+						content: [{ type: "text", text: `Heartbeat model pinned to ${modelArg} ($${model.cost.output}/M output)` }],
+						details: {
+							action: "model",
+							heartbeatModel: modelArg,
+							heartbeatModelSource: "pinned",
+							heartbeatModelCost: model.cost.output,
 						} as RhoDetails,
 					};
 				}
@@ -584,6 +772,9 @@ export default function (pi: ExtensionAPI) {
 			let text = theme.fg("toolTitle", theme.bold("rho ")) + theme.fg("muted", args.action);
 			if (args.interval) {
 				text += ` ${theme.fg("accent", args.interval)}`;
+			}
+			if (args.model) {
+				text += ` ${theme.fg("accent", args.model)}`;
 			}
 			return new Text(text, 0, 0);
 		},
@@ -695,21 +886,34 @@ export default function (pi: ExtensionAPI) {
 
 	// Register /rho command
 	pi.registerCommand("rho", {
-		description: "Control rho check-in system: status, enable, disable, now, interval <time>",
+		description: "Control rho check-in system: status, enable, disable, now, interval <time>, model <auto|provider/model>",
 		handler: async (args, ctx) => {
 			const [subcmd, ...rest] = args.trim().split(/\s+/);
 			const arg = rest.join(" ");
 
 			switch (subcmd) {
 				case "status":
-				case "":
+				case "": {
+					let modelInfo = state.heartbeatModel ? `${state.heartbeatModel} (pinned)` : "auto";
+					try {
+						if (!state.heartbeatModel) {
+							const resolved = await resolveHeartbeatModel(ctx);
+							if (resolved) {
+								modelInfo = `${resolved.provider}/${resolved.model} (auto)`;
+							}
+						}
+					} catch {
+						// ignore
+					}
 					ctx.ui.notify(
 						`Rho: ${state.enabled ? "enabled" : "disabled"}, ` +
 						`interval: ${formatInterval(state.intervalMs)}, ` +
+						`model: ${modelInfo}, ` +
 						`count: ${state.checkCount}`,
 						"info"
 					);
 					break;
+				}
 
 				case "enable":
 					state.enabled = true;
@@ -761,9 +965,42 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 
+				case "model": {
+					if (!arg) {
+						const source = state.heartbeatModel ? "pinned" : "auto";
+						ctx.ui.notify(`Heartbeat model: ${state.heartbeatModel || "auto"} (${source})`, "info");
+						return;
+					}
+
+					if (arg === "auto") {
+						state.heartbeatModel = null;
+						cachedModel = null;
+						saveStateToDisk();
+						ctx.ui.notify("Heartbeat model set to auto (cheapest available)", "success");
+						return;
+					}
+
+					const parts = arg.split("/");
+					if (parts.length !== 2) {
+						ctx.ui.notify("Usage: /rho model auto  OR  /rho model provider/model-id", "error");
+						return;
+					}
+
+					const model = ctx.modelRegistry.find(parts[0], parts[1]);
+					if (!model) {
+						ctx.ui.notify(`Model '${arg}' not found`, "error");
+						return;
+					}
+
+					state.heartbeatModel = arg;
+					saveStateToDisk();
+					ctx.ui.notify(`Heartbeat model pinned to ${arg} ($${model.cost.output}/M output)`, "success");
+					break;
+				}
+
 				default:
-					ctx.ui.notify("Usage: /rho [status|enable|disable|now|interval <time>]", "warning");
-					ctx.ui.notify("Examples: /rho now, /rho interval 30m, /rho interval 1h", "info");
+					ctx.ui.notify("Usage: /rho [status|enable|disable|now|interval|model]", "warning");
+					ctx.ui.notify("Examples: /rho now, /rho interval 30m, /rho model auto", "info");
 			}
 		},
 	});
