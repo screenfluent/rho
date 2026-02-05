@@ -1,5 +1,5 @@
 {
-  "pid": 17929,
-  "started": "2026-02-05T04:48:27.334286076Z",
-  "prompt": "# Cross-Platform Rho Implementation\n\n## Context\n\nThis is a structural refactor to make Rho cross-pla..."
+  "pid": 32001,
+  "started": "2026-02-05T07:09:14.468153271Z",
+  "prompt": "Check ~/.config/xpost/tweet-queue.jsonl -- if non-empty, take the first item and draft a post around..."
 }
