@@ -8,7 +8,6 @@
 _(none)_
 
 ## Ready (Prioritized)
-- [ ] **iPhone/Termius support** — SSH-friendly tmux config (mouse on, reduced escape-time, mobile status bar). Termius setup guide. Oracle Cloud free tier guide. See `~/notes/research/iphone-termius-strategy.md`. **P1**
 - [ ] **Landing site updates** — Add iPhone/Termius section. "Use your existing subscription" messaging. Cost comparison vs OpenClaw. Provider logos. **P1**
 - [ ] **Fix README diagram** — GitHub issue #1. Formatting broken on agent loop diagram. **P1** _(likely resolved by cross-platform README rewrite — verify after push)_
 - [ ] **Landing site in repo** — Move `~/projects/rho-site/` into repo or separate repo. Set up CI deploy to Cloudflare Pages. **P1**
@@ -29,6 +28,7 @@ _(none)_
 
 ## Done
 
+- [x] **iPhone/Termius support** — SSH-friendly tmux config, Termius setup guide, VPS guide (Oracle free tier, Hetzner, DO), install.sh auto-installs tmux config on linux/macos, README iPhone section. 28 tests. **P1** — 2026-02-05
 - [x] **Smart heartbeat routing** — Heartbeat auto-resolves cheapest model across all providers. Cross-provider resolution, 5m cache, --thinking off, /rho model command, pinning support. BDD spec: 15 scenarios. **P1** — 2026-02-05
 - [x] **`rho login` command** — `rho login` opens pi's OAuth flow, `--status` shows providers, `--logout` removes creds. 7 acceptance tests pass. **P0** — 2026-02-05
 - [x] **Cross-platform refactor** — All 10 steps completed. macOS/Linux/Android platforms, OS-aware install.sh, config support, setup scripts, README rewrite. 13 local commits. Ralph loop: 17 iterations, 27m. **P0** — 2026-02-05

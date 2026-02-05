@@ -12,6 +12,7 @@
 
 | Date | Task | Method | Details |
 |------|------|--------|---------|
+| 2026-02-05 | iPhone/Termius support | Direct | SSH-friendly tmux config, setup guides (iPhone + VPS), install.sh integration, README update. 28 new tests. |
 | 2026-02-05 | Smart heartbeat routing | Direct | Cross-provider cheapest model resolution, --thinking off, /rho model command, pinning, 15 BDD scenarios. |
 | 2026-02-05 | `rho login` command | Direct (trivial) | New subcommand: `rho login`, `--status`, `--logout`. 7 acceptance tests. |
 | 2026-02-05 | Cross-platform refactor | Ralph loop (17 iter, 27m) | All 10 steps. 13 local commits. Platforms dir, OS-aware install, config support, README rewrite. |
@@ -28,11 +29,11 @@
 - **GitHub Issues**: 1 open (#1 README diagram -- likely resolved by cross-platform README rewrite, pending push)
 - **CI**: No CI configured yet
 - **Site**: https://runrho.dev -- deployed via `wr pages deploy`
-- **Local vs Remote**: 16 commits ahead of origin/main (cross-platform refactor + rho login + smart heartbeat + specs)
+- **Local vs Remote**: 21 commits ahead of origin/main (cross-platform refactor + rho login + smart heartbeat + iPhone/Termius)
 
 ## Pending Approval (External Actions)
 
-- `cd ~/projects/rho && git push origin main` -- Push 16 commits (cross-platform refactor + rho login + smart heartbeat routing)
+- `cd ~/projects/rho && git push origin main` -- Push 21 commits (cross-platform refactor + rho login + smart heartbeat routing + iPhone/Termius support)
 - `gh issue close 1 -R mikeyobrien/rho -c "Resolved by cross-platform README rewrite"` -- Close issue #1 after push
 
 ## Architecture Decisions
@@ -49,7 +50,7 @@
 ## Tech Debt
 
 - [ ] No CI/CD pipeline -- deploys are manual `wr pages deploy`
-- [ ] No automated tests
+- [x] ~~No automated tests~~ -- 35 tests across 3 suites (rho-login: 7, tmux-config: 11, iphone-docs: 17)
 - [ ] rho-site not in git yet
 - [ ] bootstrap.sh untested on fresh Termux
 - [x] ~~features/ not committed to repo yet~~ -- committed 2026-02-05
