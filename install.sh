@@ -116,10 +116,19 @@ cleanup_old() {
     # Old install: skills/ is a symlink to repo dir. Remove the symlink only.
     rm -f "$PI_DIR/skills"
   elif [ -d "$PI_DIR/skills" ]; then
-    # New install: skills/ is a real dir with individual symlinks. Remove entries inside.
+    # New install: skills/ is a real dir with individual symlinks.
+    # IMPORTANT: use -L check and rm -f (not rm -rf) for symlinks,
+    # otherwise rm -rf follows the symlink and deletes actual repo files.
     for entry in "$PI_DIR/skills"/*/; do
-      [ -e "$entry" ] || [ -L "$entry" ] || continue
-      rm -rf "$entry"
+      local name
+      name="${entry%/}"          # strip trailing slash from glob
+      name="$(basename "$name")"
+      local target="$PI_DIR/skills/$name"
+      if [ -L "$target" ]; then
+        rm -f "$target"
+      elif [ -d "$target" ]; then
+        rm -rf "$target"
+      fi
     done
   fi
 }
