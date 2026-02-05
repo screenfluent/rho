@@ -1,6 +1,6 @@
 ---
-name: termux-location
-description: Get GPS/network location. Use for location-aware actions, finding nearby places, or logging position.
+name: location
+description: Get device location via GPS or network. Use for location-aware actions, finding nearby places, or logging position.
 ---
 
 # Location

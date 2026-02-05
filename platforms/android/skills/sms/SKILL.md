@@ -1,5 +1,5 @@
 ---
-name: termux-sms
+name: sms
 description: Read and send SMS messages. Use for checking texts, 2FA codes, or sending SMS alerts.
 ---
 

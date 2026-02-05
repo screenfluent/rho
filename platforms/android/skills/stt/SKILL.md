@@ -1,5 +1,5 @@
 ---
-name: termux-stt
+name: stt
 description: Speech-to-text — transcribe voice to text using device microphone. Use for voice commands, dictation, or hands-free input.
 ---
 

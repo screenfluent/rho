@@ -1,5 +1,5 @@
 ---
-name: termux-device
+name: device
 description: Device controls — vibration, torch, volume, battery status, toast messages. Use for haptic feedback, flashlight, or quick status checks.
 ---
 

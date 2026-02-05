@@ -1,5 +1,5 @@
 ---
-name: termux-contacts
+name: contacts
 description: Access phone contacts and call log. Use for looking up contact info or checking recent calls.
 ---
 

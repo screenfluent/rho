@@ -1,6 +1,6 @@
 ---
-name: termux-notification
-description: Show Android system notifications with optional buttons, sounds, and actions. Use for alerts, reminders, or persistent status messages.
+name: notification
+description: Show system notifications with optional buttons, sounds, and actions. Use for alerts, reminders, or persistent status messages.
 ---
 
 # System Notifications

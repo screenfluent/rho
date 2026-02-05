@@ -1,5 +1,5 @@
 ---
-name: termux-tts
+name: tts
 description: Text-to-speech — make the device speak text aloud. Use for voice announcements, reading content aloud, or accessibility.
 ---
 

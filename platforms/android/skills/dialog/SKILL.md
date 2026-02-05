@@ -1,5 +1,5 @@
 ---
-name: termux-dialog
+name: dialog
 description: Show interactive dialogs for user input — text, confirmations, choices, date/time pickers. Use when you need user input beyond chat.
 ---
 

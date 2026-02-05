@@ -1,5 +1,5 @@
 ---
-name: termux-media
+name: media
 description: Play audio files, record from microphone, take photos. Use for media playback, voice recording, or camera capture.
 ---
 

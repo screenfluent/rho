@@ -1,6 +1,6 @@
 ---
-name: termux-clipboard
-description: Read or write the Android clipboard. Use when copying/pasting text, transferring data between apps, or accessing clipboard contents.
+name: clipboard
+description: Read or write the system clipboard. Use when copying/pasting text, transferring data between apps, or accessing clipboard contents.
 ---
 
 # Clipboard Operations

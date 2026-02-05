@@ -27,5 +27,11 @@
 
 ## Current State
 
-- Repo is clean (only untracked .ralph/, PROMPT.md, ralph.yml, specs/)
-- Step 1 is ready to start
+- Step 1 DONE: platforms/ structure created, all Android files git mv'd
+  - Git shows all as renames (R), not delete+add
+  - Core extensions/: brain, brave-search, memory-viewer, moltbook-viewer, rho, usage-bars
+  - Core skills/: code-assist, pdd, rho-validate, update-pi
+  - Android-specific: tasker.ts, tasker-xml, all termux-* skills, stt scripts, bootstrap.sh
+  - Empty platforms/macos/skills/ and platforms/linux/skills/ created
+  - Committed: f749896
+- Step 2 is now unblocked: rename termux-* to generic names
