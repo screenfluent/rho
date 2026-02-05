@@ -5,19 +5,16 @@
 
 ## In Progress
 
-- [ ] **Cross-platform refactor** — Spec: `specs/cross-platform/plan.md`. 10 steps. Restructure repo for macOS/Linux/Android. **Priority: P0**
-  - Status: Steps 1-4 done (committed to main). Step 5 next (Android open-url skill).
-  - Steps done: directory structure, Android file moves, skill renames, macOS skills, Linux skills
-  - Steps remaining: 5 (open-url), 6 (install.sh rewrite), 7 (config support), 8 (setup.sh), 9 (README), 10 (E2E testing)
-  - No active subagent — needs respawn
+- [ ] **`rho login` command** — Provider picker wrapping pi's `/login` OAuth flow. Supports `--provider` flag. Zero-config LLM access. BDD spec: `features/rho-login.feature`. **P0**
+  - Status: Ralph loop spawned (spec-driven preset). tmux window `eng-login`.
+  - Pi has `/login` slash command with OAuth provider selector (confirmed in pi 0.51.6)
+  - Auth stored in `~/.pi/agent/auth.json` via pi's `AuthStorage`
 
 ## Ready (Prioritized)
-
-- [ ] **`rho login` command** — Provider picker (Claude/ChatGPT/Google/OpenRouter). Wraps `pi login`. OAuth for coding subscriptions, API key fallback. Zero-config LLM access. The #1 onboarding improvement. See `~/notes/research/onboarding-cost-strategy.md`. **P0**
 - [ ] **Smart heartbeat routing** — Heartbeat uses cheapest available model, not user's primary model. Leverage `resolveSmallModel`. Document cost advantage vs OpenClaw ($0.001/heartbeat vs $0.75). **P1**
 - [ ] **iPhone/Termius support** — SSH-friendly tmux config (mouse on, reduced escape-time, mobile status bar). Termius setup guide. Oracle Cloud free tier guide. See `~/notes/research/iphone-termius-strategy.md`. **P1**
 - [ ] **Landing site updates** — Add iPhone/Termius section. "Use your existing subscription" messaging. Cost comparison vs OpenClaw. Provider logos. **P1**
-- [ ] **Fix README diagram** — GitHub issue #1. Formatting broken on agent loop diagram. **P1**
+- [ ] **Fix README diagram** — GitHub issue #1. Formatting broken on agent loop diagram. **P1** _(likely resolved by cross-platform README rewrite — verify after push)_
 - [ ] **Landing site in repo** — Move `~/projects/rho-site/` into repo or separate repo. Set up CI deploy to Cloudflare Pages. **P1**
 - [ ] **Install redirect** — Update bootstrap.sh to use `curl -fsSL https://runrho.dev/install | bash` as canonical URL. **P1**
 - [ ] **/tasks command** — Lightweight task queue extension. See TODO.md for spec. **P2**
@@ -36,6 +33,7 @@
 
 ## Done
 
+- [x] **Cross-platform refactor** — All 10 steps completed. macOS/Linux/Android platforms, OS-aware install.sh, config support, setup scripts, README rewrite. 13 local commits. Ralph loop: 17 iterations, 27m. **P0** — 2026-02-05
 - [x] **MIT license** — Added LICENSE file to repo root. **P0** — 2026-02-04
 - [x] **FUNDING.yml** — Added `.github/FUNDING.yml` with GitHub Sponsors link. **P0** — 2026-02-04
 

@@ -4,9 +4,16 @@
 
 ## Active Subagents
 
-| ID | Task | Branch | Started | Last Update | Status |
-|----|------|--------|---------|-------------|--------|
-| _none_ | | | | | |
+| ID | Task | Preset | Started | Status |
+|----|------|--------|---------|--------|
+| eng-login | `rho login` command | spec-driven.yml | 2026-02-05 01:09 CST | Spawning |
+
+## Completed Work
+
+| Date | Task | Method | Details |
+|------|------|--------|---------|
+| 2026-02-05 | Cross-platform refactor | Ralph loop (17 iter, 27m) | All 10 steps. 13 local commits. Platforms dir, OS-aware install, config support, README rewrite. |
+| 2026-02-04 | MIT license + FUNDING.yml | Direct | Added LICENSE and .github/FUNDING.yml |
 
 ## Recent Deployments
 
@@ -16,15 +23,21 @@
 
 ## Build Health
 
-- **GitHub Issues**: 1 open (#1 README diagram)
+- **GitHub Issues**: 1 open (#1 README diagram -- likely resolved by cross-platform README rewrite, pending push)
 - **CI**: No CI configured yet
-- **Site**: https://runrho.dev — deployed via `wr pages deploy` (up, local DNS stale on device — resolves via Google DNS)
-- **Cross-platform**: Steps 1-4 of 10 committed to main. No active subagent.
+- **Site**: https://runrho.dev -- deployed via `wr pages deploy`
+- **Local vs Remote**: 13 commits ahead of origin/main (cross-platform refactor)
+
+## Pending Approval (External Actions)
+
+- `cd ~/projects/rho && git push origin main` -- Push cross-platform refactor (13 commits)
+- `gh issue close 1 -R mikeyobrien/rho -c "Resolved by cross-platform README rewrite"` -- Close issue #1 after push
 
 ## Architecture Decisions
 
 | Date | Decision | Context |
 |------|----------|---------|
+| 2026-02-05 | `rho login` wraps pi's `/login` slash command | Pi 0.51.6 has built-in OAuth provider selector via `/login`. No need to reimplement. |
 | 2026-02-04 | Single repo + platforms/ directory | Cross-platform: no separate packages, install script picks pieces |
 | 2026-02-04 | Cloudflare Pages for site | Free tier, custom domain, deploy via wrangler |
 | 2026-02-04 | Workers + D1 for future sync API | Free tier covers early growth, natural fit for brain JSONL |
@@ -32,8 +45,8 @@
 
 ## Tech Debt
 
-- [ ] No CI/CD pipeline — deploys are manual `wr pages deploy`
+- [ ] No CI/CD pipeline -- deploys are manual `wr pages deploy`
 - [ ] No automated tests
 - [ ] rho-site not in git yet
-- [x] ~~No LICENSE file in repo~~ — added 2026-02-04
 - [ ] bootstrap.sh untested on fresh Termux
+- [ ] features/ not committed to repo yet
