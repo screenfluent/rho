@@ -5,10 +5,7 @@
 
 ## In Progress
 
-- [ ] **`rho login` command** — Provider picker wrapping pi's `/login` OAuth flow. Supports `--provider` flag. Zero-config LLM access. BDD spec: `features/rho-login.feature`. **P0**
-  - Status: Ralph loop spawned (spec-driven preset). tmux window `eng-login`.
-  - Pi has `/login` slash command with OAuth provider selector (confirmed in pi 0.51.6)
-  - Auth stored in `~/.pi/agent/auth.json` via pi's `AuthStorage`
+_(none)_
 
 ## Ready (Prioritized)
 - [ ] **Smart heartbeat routing** — Heartbeat uses cheapest available model, not user's primary model. Leverage `resolveSmallModel`. Document cost advantage vs OpenClaw ($0.001/heartbeat vs $0.75). **P1**
@@ -33,6 +30,7 @@
 
 ## Done
 
+- [x] **`rho login` command** — `rho login` opens pi's OAuth flow, `--status` shows providers, `--logout` removes creds. 7 acceptance tests pass. **P0** — 2026-02-05
 - [x] **Cross-platform refactor** — All 10 steps completed. macOS/Linux/Android platforms, OS-aware install.sh, config support, setup scripts, README rewrite. 13 local commits. Ralph loop: 17 iterations, 27m. **P0** — 2026-02-05
 - [x] **MIT license** — Added LICENSE file to repo root. **P0** — 2026-02-04
 - [x] **FUNDING.yml** — Added `.github/FUNDING.yml` with GitHub Sponsors link. **P0** — 2026-02-04

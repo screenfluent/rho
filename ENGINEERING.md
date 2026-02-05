@@ -6,12 +6,13 @@
 
 | ID | Task | Preset | Started | Status |
 |----|------|--------|---------|--------|
-| eng-login | `rho login` command | spec-driven.yml | 2026-02-05 01:09 CST | Spawning |
+| _(none)_ | | | | |
 
 ## Completed Work
 
 | Date | Task | Method | Details |
 |------|------|--------|---------|
+| 2026-02-05 | `rho login` command | Direct (trivial) | New subcommand: `rho login`, `--status`, `--logout`. 7 acceptance tests. |
 | 2026-02-05 | Cross-platform refactor | Ralph loop (17 iter, 27m) | All 10 steps. 13 local commits. Platforms dir, OS-aware install, config support, README rewrite. |
 | 2026-02-04 | MIT license + FUNDING.yml | Direct | Added LICENSE and .github/FUNDING.yml |
 
@@ -26,7 +27,7 @@
 - **GitHub Issues**: 1 open (#1 README diagram -- likely resolved by cross-platform README rewrite, pending push)
 - **CI**: No CI configured yet
 - **Site**: https://runrho.dev -- deployed via `wr pages deploy`
-- **Local vs Remote**: 13 commits ahead of origin/main (cross-platform refactor)
+- **Local vs Remote**: 15 commits ahead of origin/main (cross-platform refactor + rho login + specs)
 
 ## Pending Approval (External Actions)
 
@@ -49,4 +50,4 @@
 - [ ] No automated tests
 - [ ] rho-site not in git yet
 - [ ] bootstrap.sh untested on fresh Termux
-- [ ] features/ not committed to repo yet
+- [x] ~~features/ not committed to repo yet~~ -- committed 2026-02-05
