@@ -1,8 +1,6 @@
 # rho
 
-A persistent AI agent with memory, a heartbeat, and platform-native capabilities. Runs on macOS, Linux, and Android. Accessible from iPhone/iPad via SSH.
-
-Not a cloud service, not a browser tab -- an agent that lives where you do, remembers what you told it yesterday, and checks in on its own.
+A persistent AI agent with memory, a heartbeat, and platform-native capabilities. Runs on macOS, Linux, and Android. A process that stays running, remembers what you told it yesterday, and checks in on its own.
 
 Built on [pi coding agent](https://github.com/badlogic/pi-mono).
 
@@ -76,7 +74,7 @@ These work on every platform:
 
 **Heartbeat** -- Rho checks in periodically (default: 30 min). Each check-in reads your `~/RHO.md` checklist and `~/HEARTBEAT.md` scheduled tasks, runs what needs running, and reports back.
 
-**Memory** -- Persistent brain across sessions. Learnings, preferences, and context accumulate over time in `~/.pi/brain/`. Your agent remembers what you told it yesterday.
+**Memory** -- Persistent brain across sessions. Learnings, preferences, and context accumulate over time in `~/.rho/brain/`. Your agent remembers what you told it yesterday.
 
 **Skills** -- On-demand capability packages the agent loads when needed. Core skills work everywhere; platform skills give native access to notifications, clipboard, speech, and more.
 
@@ -156,7 +154,7 @@ Create `~/SOUL.md` to give your agent a voice and identity. This is where you de
 
 ### Brain
 
-The brain lives at `~/.pi/brain/`:
+The brain lives at `~/.rho/brain/`:
 
 - `core.jsonl` -- Behavior, identity
 - `memory.jsonl` -- Learnings and preferences (grows over time)

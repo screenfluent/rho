@@ -2,6 +2,10 @@
 
 ## Patterns
 
+### mem-1770303780-57ac
+> vault-core.ts is a separate module from vault.ts, containing pure functions (parseFrontmatter, extractWikilinks, buildGraph, ensureVaultDirs, validateNote) so tests can import without pi-coding-agent dependencies. Tests in tests/test-vault.ts (54 tests, npx tsx runner).
+<!-- tags: vault, testing, architecture | created: 2026-02-05 -->
+
 ## Decisions
 
 ## Fixes

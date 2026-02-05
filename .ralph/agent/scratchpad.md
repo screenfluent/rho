@@ -1,82 +1,179 @@
-# X Content Research - 2026-02-05 ~03:10 CST
+# Vault Extension -- Phase 1 Planner Notes
 
-## Task 1: Reply Target
+## Context
 
-**Best thread: John Scott-Railton (@jsrailton)**
-- Post: https://x.com/jsrailton/status/2018441792090173643
-- Content: "NEW: #OpenClaw bots are being targeted with malicious skills to steal cryptocurrency, keys & passwords. At least 341 skills were part of the same campaign. Only thing rivaling the speed @openclaw user growth? Velocity of malicious actors showing up."
-- This is a high-profile security researcher (Citizen Lab), big audience, recent post about agent security
-- He also posted about the CVE-2026-25253 1-click RCE: "wild west of curious people putting this very cool, very scary thing"
+- **Design doc:** `~/notes/projects/rho/design/vault.md` (read in full)
+- **Reference impl:** `extensions/brain.ts` (~38KB, full extension with tool, command, events)
+- **Target:** `extensions/vault.ts` (~300-500 LOC)
+- **Vault location:** `~/.pi/vault/` (NOT `~/.rho/vault/` -- objective overrides design doc)
+- **Test runner:** `npx tsx` available (node v24.13, tsx v4.21.0)
+- **Existing tests:** Shell scripts with assert pattern in `tests/`
 
-**Why this thread:** jsrailton names the exact problem we've been tracking. Our angle: the ecosystem is racing to standardize skill formats (.agents/skills -- Lee Robinson/Vercel, Codex all jumping in) while nobody is building signing, provenance, or verification. npm's early days repeated.
+## Key Patterns from brain.ts
 
-**Reply angle:** The real problem isn't the 341 malicious skills. It's that the ecosystem response is to standardize the directory structure (.agents/skills), not to add signing or provenance. Everyone's building the package registry before building the lock file.
+- Imports: `ExtensionAPI`, `ExtensionContext` from pi-coding-agent; `StringEnum` from pi-ai; `Type` from typebox
+- Tool registration: `pi.registerTool({ name, label, description, parameters, async execute() })`
+- Slash command: `pi.registerCommand("name", { description, handler })`
+- File helpers: `ensureDir()`, `readJsonl()`, `appendJsonl()`, `writeJsonl()` -- vault needs equivalents for markdown
+- Status widget: `ctx.ui.setStatus(id, text)`
+- Events: `pi.on("session_start", ...)`, `pi.on("before_agent_start", ...)`
 
-## Task 2: Original Post
+## Architecture Decisions
 
-**Theme: Agent extension ecosystem security gap**
+1. **Vault at `~/.pi/vault/`** per objective (design doc says `~/.rho/vault/` but objective overrides)
+2. **In-memory graph** rebuilt on load + after each write mutation
+3. **Frontmatter** parsed manually (YAML between `---` fences) -- no external YAML parser needed for simple key-value
+4. **Wikilinks** extracted via regex `\[\[([^\]|]+)(?:\|[^\]]+)?\]\]`
+5. **Verbatim trap guard** rejects writes missing frontmatter, connections section, or wikilinks (except log type)
+6. **Tests** as a standalone TypeScript file run via `npx tsx` -- tests pure functions (parser, extractor, graph, guard)
 
-Fresh angle not in avoid list. The facts:
-- 341 malicious ClawHub skills confirmed (TheHackersNews)
-- CVE-2026-25253: 1-click RCE via malicious link (0xacb)
-- 16.7K exposed services (HunterMapping)
-- Cisco mcp-scanner has 741 stars, growing fast
-- Vercel (skills.sh), Codex, Cursor all standardizing .agents/skills
-- NOBODY is building trust infrastructure (signing, provenance, verification gates)
-- The entire ecosystem is repeating npm/pip early days
+## Task Breakdown
 
-Post angle: The agent skill ecosystem built a marketplace before building security. 341 malicious skills, a 1-click RCE, and the response is to standardize the directory name.
+Three tasks, ordered by dependency:
 
-## Topics covered (NOT in avoid list)
-- Security gap in agent extensions ✓ FRESH
-- Agent supply chain trust ✓ FRESH
+### Task 1: Core types, parsers, graph builder, and test harness
+- VaultNote interface + VaultGraph type
+- parseFrontmatter() -- extract YAML fields
+- extractWikilinks() -- regex extraction
+- buildGraph() -- scan dir, parse all .md, compute backlinks
+- ensureVaultDirs() -- create directory structure
+- Test file: `tests/test-vault.ts` with tests for all pure functions
 
-## Writer Phase - 2026-02-05 ~03:11 CST
+### Task 2: Extension skeleton + tool actions (capture, read, write with verbatim guard)
+- export default function(pi) skeleton
+- Ensure dirs on load
+- Create _index.md and _inbox.md if missing
+- Register vault tool with 5 actions
+- capture: append to _inbox.md
+- read: read note + backlinks from graph
+- write: create/update note, validate with verbatim guard, place in correct dir
+- Graph rebuild after write
+- Add tests for capture, write, guard
 
-Wrote two drafts to ~/notes/drafts/x-drafts.md:
+### Task 3: Status/list actions + /vault slash command
+- status: note counts by type, orphan count, inbox items, avg links
+- list: filter by type and query
+- /vault slash command with status dashboard
+- Final integration verification
 
-1. **Reply** to @jsrailton thread on 341 malicious OpenClaw skills. Punchy: the problem isn't the malware, it's that the response is directory standardization not trust infra. "Package registry before the lock file" is a clean analogy.
+## Task 1 Complete (2026-02-05)
 
-2. **Original tweet** on agent extension security gap. Hits the numbers (341 skills, 1-click RCE, 16K instances) then the punchline: industry response is to standardize the folder name. Closes with "npm circa 2013."
+Implemented `extensions/vault-core.ts` with all pure functions separated from the extension
+for testability. Created `tests/test-vault.ts` with 54 passing tests covering:
+- parseFrontmatter (5 cases: valid, minimal, missing, single tag, empty tags)
+- extractWikilinks (7 cases: single, multiple, display text, none, mixed, dedup, adjacent)
+- buildGraph (16 assertions: 4 notes, links, backlinks, orphan detection, title extraction)
+- ensureVaultDirs (7 assertions: root + 5 subdirs + idempotency)
+- validateNote (11 assertions: valid, no frontmatter, no connections, no wikilinks, log exemption, patterns, references)
 
-Both are under 280 chars, no emoji, no hashtags, first person where needed, direct and opinionated.
+Key decision: split vault-core.ts from vault.ts so tests avoid pi-coding-agent import issues.
 
-## Editor Review - 2026-02-05 ~03:12 CST
+## Task 2 Complete (2026-02-05)
 
-**Reply draft: APPROVED.** "Package registry before the lock file" is clean. No changes.
+Implemented extension skeleton (`extensions/vault.ts`, 237 LOC) + new I/O functions in vault-core.ts.
 
-**Original tweet: REVISION NEEDED.** 5 sentences, spec says 1-3. Core is strong but bloated. Suggested trim: drop the opening thesis (stats already convey it) and the redundant "nobody is shipping" line. Target: 3 sentences hitting stats → punchline → analogy.
+New functions added to vault-core.ts:
+- `typeToDir(type)` -- maps note type to subdirectory (concept->concepts, log->log, moc->"")
+- `createDefaultFiles(vaultDir)` -- idempotent _index.md and _inbox.md creation
+- `captureToInbox(vaultDir, text, source?, context?)` -- timestamped append to _inbox.md
+- `readNote(vaultDir, slug, graph)` -- content + backlinks, with disk fallback
+- `writeNote(vaultDir, slug, content, type)` -- validate + write to correct subdir
+- `findNoteFile(vaultDir, slug)` -- scan all dirs for a slug (internal helper)
 
-## Revision Applied - 2026-02-05 ~03:13 CST
+vault.ts extension shell:
+- Bootstrap: ensureVaultDirs + createDefaultFiles on load, buildGraph immediately
+- session_start: rebuild graph + update widget
+- Status widget: "📓 N notes (M orphans)"
+- Tool registration with 5 actions (capture/read/write implemented, status/list stubbed for Task 3)
+- Graph rebuild after every write mutation
 
-Applied editor's revision to original tweet. Trimmed from 5 sentences to 3:
+Tests expanded from 54 to 97 passing assertions:
+- typeToDir (7): all types including moc and unknown
+- createDefaultFiles (6): creation, content, idempotency
+- captureToInbox (9): basic, with source/context, append-not-overwrite
+- writeNote (15): valid concept, log, rejected invalid, moc at root, update existing
+- readNote (6): existing with backlinks, mutual links, missing note
 
-> 341 malicious agent skills, a 1-click RCE, 16K exposed instances. The industry response: standardize the folder name. npm circa 2013 all over again.
+## Task 3 Complete (2026-02-05)
 
-Cuts the opening thesis and redundant "nobody is shipping" line. Stats hit first, folder-name punchline lands, npm closer sticks. Clean.
+Implemented status/list actions + /vault slash command. Phase 1 is now complete.
 
-Reply draft unchanged (was already approved):
-> The real issue isn't the 341 malicious skills. It's that the ecosystem response is to standardize the directory structure, not add signing or provenance. Everyone is building the package registry before building the lock file.
+New functions added to vault-core.ts:
+- `VaultStatus` and `NoteListEntry` interfaces
+- `countInboxItems(vaultDir)` -- counts --- separators in _inbox.md (internal)
+- `getVaultStatus(vaultDir, graph)` -- totalNotes, byType, orphanCount, inboxItems, avgLinksPerNote
+- `listNotes(graph, type?, query?)` -- filter by type and/or case-insensitive title/slug query
 
-Both drafts written to ~/notes/drafts/x-drafts.md. Ready for final review.
+vault.ts changes:
+- `status` action: formatted multi-line stats output
+- `list` action: filtered note listing with type/query, shows slug/title/type/links/backlinks/updated
+- `/vault` slash command: compact one-line status via ctx.ui.notify()
+- Tool description updated to mention all 5 actions
 
-## Final Editor Review - 2026-02-05 ~03:13 CST
+Tests expanded from 97 to 126 passing assertions:
+- getVaultStatus (14): type counts, orphans, inbox items, avg links, empty vault
+- listNotes (15): all notes, filter by type, filter by query, combined filter, no results, case-insensitive
 
-Both drafts pass all checklist items. No revisions needed.
+Final file sizes: vault.ts 316 LOC, vault-core.ts 539 LOC = 855 total (within 300-500 LOC target for vault.ts alone, split into two files for testability).
 
-**Reply:** "Package registry before the lock file" analogy is strong. Reframes jsrailton's thread from "malware is bad" to "the systemic response is wrong." 3 sentences, each builds.
+## Phase 1 Complete -- Final Verification (2026-02-05)
 
-**Original:** Stats-first cold open, "standardize the folder name" punchline, "npm circa 2013" closer. Trimmed revision was the right call.
+All 3 tasks done, 126 tests passing, no modifications to existing extensions (brain.ts/rho.ts diffs are pre-existing migration work, not from vault).
 
-Good tonal variation between the two: reply is more technical (directory structure, lock file) for jsrailton's security researcher audience; original is punchier (folder name, npm) for broader reach.
+Phase 1 checklist verified:
+- Extension skeleton with imports, export default
+- ~/.pi/vault/ with concepts/, projects/, patterns/, references/, log/ dirs
+- _index.md and _inbox.md created if missing
+- parseFrontmatter() -- YAML between --- fences
+- extractWikilinks() -- regex for [[slug]] and [[slug|display]]
+- VaultNote interface + VaultGraph type (Map)
+- buildGraph() -- scan, parse, adjacency + backlinks
+- Graph rebuild after mutations
+- vault tool with 5 actions: capture, read, write, status, list
+- capture: timestamped append to _inbox.md
+- read: content + backlinks, disk fallback
+- write: validate, correct dir by type, update frontmatter
+- status: counts by type, orphans, inbox items, avg links
+- list: filter by type and/or query, case-insensitive
+- Verbatim trap guard (reject missing frontmatter/connections/wikilinks, log exempt)
+- /vault slash command with status
 
-CONTENT_COMPLETE. Both approved.
+Handing off to Validator.
 
-## Completion - 2026-02-05 ~03:14 CST
+## Validation Complete (2026-02-05)
 
-Content approved and verified in ~/notes/drafts/x-drafts.md:
+Ran exhaustive validation as Validator hat:
+- 126/126 tests pass (ran myself, not trusted from builder)
+- Manual E2E with 10 scenarios in isolated temp vault: all pass
+- No existing extensions modified (brain.ts/rho.ts diffs confirmed pre-existing migration)
+- YAGNI: clean, no Phase 2+ features, no speculative code
+- KISS: Map graph, regex, native fs -- simplest possible
+- Idiomatic: follows brain.ts patterns exactly
+- No new dependencies
+- All 16 Phase 1 checklist items verified
 
-1. **Reply** to @jsrailton on 341 malicious OpenClaw skills — "package registry before the lock file" angle
-2. **Original tweet** on agent extension security gap — stats-first, "standardize the folder name" punchline, "npm circa 2013" closer
+Verdict: PASS. Emitting validation.passed.
 
-Both passed editor review. No open tasks. Emitting CONTENT_COMPLETE.
+## Commit Complete (2026-02-05)
+
+Committed as `ec0c49b` on main:
+```
+feat(vault): add Phase 1 vault extension -- markdown knowledge graph
+```
+
+Staged only vault files (vault-core.ts, vault.ts, test-vault.ts). Pre-existing
+brain.ts/rho.ts migration diffs and other changes intentionally left unstaged --
+those are separate work items.
+
+Not pushed (per user preference: do not push unless explicitly asked).
+
+## LOOP_COMPLETE (2026-02-05)
+
+Received commit.complete event. Verified:
+- Commit ec0c49b on main with all 3 vault files (vault-core.ts, vault.ts, test-vault.ts)
+- 126/126 tests pass
+- No open tasks remain
+- All 16 Phase 1 checklist items satisfied
+- Not pushed (per user preference)
+
+Objective fully complete. Emitting LOOP_COMPLETE.

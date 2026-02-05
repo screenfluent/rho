@@ -11,7 +11,8 @@ set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
-BRAIN_DIR="$HOME/.pi/brain"
+RHO_DIR="$HOME/.rho"
+BRAIN_DIR="$RHO_DIR/brain"
 CONFIG_DIR="$HOME/.config/rho"
 FORCE=0
 
@@ -259,6 +260,7 @@ bootstrap_templates() {
           -e "s|{{HOME}}|$HOME|g" \
           -e "s|{{CONFIG_PATH}}|$PI_DIR|g" \
           -e "s|{{BRAIN_PATH}}|$BRAIN_DIR|g" \
+          -e "s|{{RHO_DIR}}|$RHO_DIR|g" \
           -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
           "$REPO_DIR/AGENTS.md.template" > "$HOME/AGENTS.md"
 

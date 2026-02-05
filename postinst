@@ -2,13 +2,20 @@
 # Post-installation script for rho
 
 PI_DIR="$HOME/.pi/agent"
-BRAIN_DIR="$HOME/.pi/brain"
+RHO_DIR="$HOME/.rho"
+BRAIN_DIR="$RHO_DIR/brain"
 SHARE_DIR="$PREFIX/share/rho"
 
 echo "Setting up rho..."
 
 # Create directories
-mkdir -p "$PI_DIR" "$BRAIN_DIR"
+mkdir -p "$PI_DIR" "$RHO_DIR" "$BRAIN_DIR"
+
+# Migrate legacy brain location
+if [ -d "$HOME/.pi/brain" ] && [ ! -d "$BRAIN_DIR" -o -z "$(ls -A "$BRAIN_DIR" 2>/dev/null)" ]; then
+  cp -r "$HOME/.pi/brain/"* "$BRAIN_DIR/" 2>/dev/null && \
+    echo "✓ Migrated brain: ~/.pi/brain -> $BRAIN_DIR"
+fi
 
 # Symlink extensions and skills
 rm -rf "$PI_DIR/extensions" "$PI_DIR/skills"
@@ -33,6 +40,7 @@ if [ ! -f "$HOME/AGENTS.md" ]; then
       -e "s|{{HOME}}|$HOME|g" \
       -e "s|{{CONFIG_PATH}}|$PI_DIR|g" \
       -e "s|{{BRAIN_PATH}}|$BRAIN_DIR|g" \
+      -e "s|{{RHO_DIR}}|$RHO_DIR|g" \
       -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
       "$SHARE_DIR/AGENTS.md.template" > "$HOME/AGENTS.md"
   echo "✓ Created ~/AGENTS.md"

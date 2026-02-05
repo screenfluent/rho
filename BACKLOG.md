@@ -8,11 +8,18 @@
 _(none)_
 
 ## Ready (Prioritized)
+- [ ] **Vault: skeleton + note format + graph** — `vault.ts` extension, `~/.pi/vault/` directory scaffolding, frontmatter parsing, wikilink extraction (`[[slug]]` regex), in-memory `VaultGraph` with backlink computation. Design: `docs/design/vault.md`. **P0**
+- [ ] **Vault: tool (capture, read, write, status, list)** — Register `vault` tool with 5 Phase 1 actions. `capture` appends to `_inbox.md`, `read`/`write` with frontmatter validation, `status` dashboard, `list` with type/query filters. Verbatim trap guard on `write` (require frontmatter, connections section, >= 1 wikilink for non-log notes). **P0**
+- [ ] **Vault: /vault slash command** — `/vault` shows status dashboard, wired to `status` action. **P0**
 - [ ] **/tasks command** — Lightweight task queue extension. See TODO.md for spec. **P2**
 - [ ] **CI deploy** — Set up Cloudflare Pages CI from repo `site/` directory. Currently manual `wr pages deploy`. **P2**
 
 ## Icebox
 
+- [ ] **Vault: search + traverse + process** — `search` action (full-text + graph-adjacent), `traverse` action (BFS with depth/budget params), `process` action (inbox -> vault note promotion with connection gate). **P1**
+- [ ] **Vault: context loading + status widget** — `before_agent_start` hook injects project-relevant vault context (4K char budget). Footer widget showing note count + inbox size. **P1**
+- [ ] **Vault: auto-capture + heartbeat maintenance** — Auto-capture insights on `agent_end` to inbox. Heartbeat task: process inbox, orphan check, MOC rebuild, daily delta log, stale audit. **P2**
+- [ ] **Vault: migration + polish** — Brain -> vault migration script (one-time, opt-in). `~/notes/` convergence. `/vault graph` visualization. Vault health scoring. **P3**
 - [ ] **Trusted Extension Registry** — Workers + R2 + D1. Publish/search/install extensions. Security scanning on publish (AST analysis). Author signing (Ed25519 + GitHub identity). Permission manifests. Public trust scores. The core product. See `~/notes/research/extension-ecosystem-exploration.md` + `~/notes/research/openclaw-ecosystem-intel.md`. **P2**
 - [ ] **Extension Sync** — Push/pull extensions across devices. Free: manual. Pro: auto-sync on heartbeat. Concept: `~/notes/research/extension-sync-concept.md`. **P2**
 - [ ] **Extension gallery** — Public browse page at runrho.dev/extensions. Depends on registry. **P3**

@@ -1,12 +1,14 @@
 /**
  * Brain Extension - JSONL-based persistent memory for agents
  *
- * Structure:
- *   ~/.pi/brain/core.jsonl     - identity, behavior, user (rarely changes)
- *   ~/.pi/brain/memory.jsonl   - learnings, preferences (grows, has lifecycle)
- *   ~/.pi/brain/context.jsonl  - project contexts (matched by cwd)
- *   ~/.pi/brain/archive.jsonl  - decayed entries
- *   ~/.pi/brain/memory/YYYY-MM-DD.md - daily markdown memory log
+ * Structure (under ~/.rho/brain/):
+ *   core.jsonl     - identity, behavior, user (rarely changes)
+ *   memory.jsonl   - learnings, preferences (grows, has lifecycle)
+ *   context.jsonl  - project contexts (matched by cwd)
+ *   archive.jsonl  - decayed entries
+ *   memory/YYYY-MM-DD.md - daily markdown memory log
+ *
+ * Migrated from ~/.pi/brain/ automatically on first load.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -20,8 +22,11 @@ import * as path from "node:path";
 import * as os from "node:os";
 import * as crypto from "node:crypto";
 
-// Paths
-const BRAIN_DIR = path.join(os.homedir(), ".pi", "brain");
+// Paths — Rho owns ~/.rho/, pi owns ~/.pi/
+// Brain data lives under ~/.rho/brain/ (migrated from ~/.pi/brain/)
+const RHO_DIR = path.join(os.homedir(), ".rho");
+const BRAIN_DIR = path.join(RHO_DIR, "brain");
+const LEGACY_BRAIN_DIR = path.join(os.homedir(), ".pi", "brain");
 const CORE_FILE = path.join(BRAIN_DIR, "core.jsonl");
 const MEMORY_FILE = path.join(BRAIN_DIR, "memory.jsonl");
 const CONTEXT_FILE = path.join(BRAIN_DIR, "context.jsonl");
@@ -650,6 +655,32 @@ async function runConsolidation(
   return { before, after, removed: before - after };
 }
 
+// Migrate from legacy ~/.pi/brain/ to ~/.rho/brain/
+function migrateLegacyBrain(): void {
+  if (!fs.existsSync(LEGACY_BRAIN_DIR)) return;
+  if (fs.existsSync(BRAIN_DIR) && fs.readdirSync(BRAIN_DIR).length > 0) return; // already migrated
+
+  ensureDir();
+
+  // Copy all files from legacy dir
+  for (const entry of fs.readdirSync(LEGACY_BRAIN_DIR, { withFileTypes: true })) {
+    const src = path.join(LEGACY_BRAIN_DIR, entry.name);
+    const dst = path.join(BRAIN_DIR, entry.name);
+    if (entry.isDirectory()) {
+      if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });
+      for (const sub of fs.readdirSync(src)) {
+        fs.copyFileSync(path.join(src, sub), path.join(dst, sub));
+      }
+    } else {
+      fs.copyFileSync(src, dst);
+    }
+  }
+
+  if (AUTO_MEMORY_DEBUG) {
+    console.error(`Brain migrated: ${LEGACY_BRAIN_DIR} -> ${BRAIN_DIR}`);
+  }
+}
+
 // Bootstrap from defaults
 function bootstrapDefaults(extensionDir: string): void {
   const defaultsDir = path.join(path.dirname(extensionDir), "brain");
@@ -752,7 +783,8 @@ You have persistent memory via the \`memory\` tool. Store insights that help fut
 **Don't store:** obvious things, duplicates, session-specific details.`.trim();
 
 export default function (pi: ExtensionAPI) {
-  // Bootstrap on load
+  // Bootstrap on load — migrate from legacy location if needed
+  migrateLegacyBrain();
   bootstrapDefaults(__dirname);
 
   let autoMemoryInFlight = false;

@@ -65,8 +65,9 @@ const DEFAULT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes minimum
 const MAX_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours maximum
 
-const STATE_DIR = join(process.env.HOME || "", ".pi", "agent");
-const STATE_PATH = join(STATE_DIR, "rho-state.json");
+const RHO_DIR = join(process.env.HOME || "", ".rho");
+const LEGACY_STATE_PATH = join(process.env.HOME || "", ".pi", "agent", "rho-state.json");
+const STATE_PATH = join(RHO_DIR, "rho-state.json");
 const RESULTS_DIR = join(process.env.HOME || "", ".rho", "results");
 const HEARTBEAT_PROMPT_FILE = join(process.env.HOME || "", ".rho", "heartbeat-prompt.txt");
 const DEFAULT_SESSION_NAME = "rho";
@@ -165,6 +166,15 @@ export default function (pi: ExtensionAPI) {
 	};
 
 	const loadStateFromDisk = () => {
+		// Migrate legacy state from ~/.pi/agent/rho-state.json
+		try {
+			if (!existsSync(STATE_PATH) && existsSync(LEGACY_STATE_PATH)) {
+				mkdirSync(RHO_DIR, { recursive: true });
+				const legacyRaw = readFileSync(LEGACY_STATE_PATH, "utf-8");
+				writeFileSync(STATE_PATH, legacyRaw);
+			}
+		} catch { /* ignore migration errors */ }
+
 		try {
 			const raw = readFileSync(STATE_PATH, "utf-8");
 			const parsed = JSON.parse(raw) as Partial<RhoState>;
@@ -185,7 +195,7 @@ export default function (pi: ExtensionAPI) {
 
 	const saveStateToDisk = () => {
 		try {
-			mkdirSync(STATE_DIR, { recursive: true });
+			mkdirSync(RHO_DIR, { recursive: true });
 			writeFileSync(
 				STATE_PATH,
 				JSON.stringify(

@@ -42,6 +42,7 @@
 
 | Date | Decision | Context |
 |------|----------|---------|
+| 2026-02-05 | Markdown-with-wikilinks vault alongside JSONL brain | New `vault.ts` extension adds structured knowledge graph (`~/.pi/vault/`) coexisting with brain.ts JSONL. Brain keeps fast key-value lookups; vault adds graph traversal, selective context loading, and connection-enforced notes. No database, no vector store -- just markdown files with `[[wikilinks]]`. Design: `docs/design/vault.md`. |
 | 2026-02-05 | Cross-provider heartbeat model resolution | Resolve cheapest model across ALL providers (not just same-provider like brain.ts). 5m cache. Pinnable via /rho model. |
 | 2026-02-05 | `rho login` wraps pi's `/login` slash command | Pi 0.51.6 has built-in OAuth provider selector via `/login`. No need to reimplement. |
 | 2026-02-04 | Single repo + platforms/ directory | Cross-platform: no separate packages, install script picks pieces |
