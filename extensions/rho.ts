@@ -29,6 +29,7 @@ import { Type } from "@sinclair/typebox";
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { buildHeartbeatSection } from "./tasks-core.ts";
 
 // State stored in memory (reconstructed from session entries and persisted to disk)
 interface RhoState {
@@ -458,7 +459,15 @@ export default function (pi: ExtensionAPI) {
 			join(ctx.cwd, ".heartbeat.md"),
 			join(ctx.cwd, ".rho-heartbeat.md"),
 		]);
-		if (!rhoMd && !heartbeatMd) {
+		// Build tasks section from task queue
+		let tasksSection: string | null = null;
+		try {
+			tasksSection = buildHeartbeatSection();
+		} catch {
+			// Tasks module not available or error -- not critical
+		}
+
+		if (!rhoMd && !heartbeatMd && !tasksSection) {
 			scheduleNext(ctx);
 			return;
 		}
@@ -467,6 +476,9 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (heartbeatMd) {
 			fullPrompt += `\n\n---\n\nHEARTBEAT.md content:\n${heartbeatMd}`;
+		}
+		if (tasksSection) {
+			fullPrompt += `\n\n---\n\n${tasksSection}`;
 		}
 
 		// Resolve cheapest model async, then dispatch
