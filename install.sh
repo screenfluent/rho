@@ -1,125 +1,334 @@
 #!/bin/bash
+# Rho — Cross-platform install script
+# Detects OS, checks dependencies, symlinks core + platform files,
+# writes config, and bootstraps templates.
+#
+# Usage: ./install.sh [--force]
+#   --force: overwrite existing AGENTS.md
+#
+# Idempotent: safe to run multiple times.
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 PI_DIR="$HOME/.pi/agent"
 BRAIN_DIR="$HOME/.pi/brain"
+CONFIG_DIR="$HOME/.config/rho"
+FORCE=0
 
-echo "Installing rho configuration..."
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+  esac
+done
 
-# Create directories
-mkdir -p "$PI_DIR" "$BRAIN_DIR"
+# --- Platform Detection ---
 
-# Symlink extensions and skills
-rm -rf "$PI_DIR/extensions" "$PI_DIR/skills"
-ln -sf "$REPO_DIR/extensions" "$PI_DIR/extensions"
-ln -sf "$REPO_DIR/skills" "$PI_DIR/skills"
-
-echo "✓ Symlinked extensions -> $PI_DIR/extensions"
-echo "✓ Symlinked skills -> $PI_DIR/skills"
-
-# Bootstrap AGENTS.md with runtime environment
-if [ ! -f "$HOME/AGENTS.md" ] || [ "$1" = "--force" ]; then
-  # Detect OS
+detect_platform() {
   if [ -n "$TERMUX_VERSION" ]; then
-    OS="Android / Termux $TERMUX_VERSION"
-  elif [ -f /etc/os-release ]; then
-    OS=$(grep ^PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
+    PLATFORM="android"
   else
-    OS=$(uname -s)
+    case "$(uname -s)" in
+      Darwin) PLATFORM="macos" ;;
+      Linux)  PLATFORM="linux" ;;
+      *)
+        echo "Error: Unsupported OS: $(uname -s)"
+        exit 1
+        ;;
+    esac
   fi
+  echo "Detected platform: $PLATFORM"
+}
 
-  ARCH=$(uname -m)
-  USER_SHELL=$(basename "$SHELL")
+# --- Dependency Checks ---
 
-  sed -e "s|{{OS}}|$OS|g" \
-      -e "s|{{ARCH}}|$ARCH|g" \
-      -e "s|{{SHELL}}|$USER_SHELL|g" \
-      -e "s|{{HOME}}|$HOME|g" \
-      -e "s|{{CONFIG_PATH}}|$PI_DIR|g" \
-      -e "s|{{BRAIN_PATH}}|$BRAIN_DIR|g" \
-      -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
-      "$REPO_DIR/AGENTS.md.template" > "$HOME/AGENTS.md"
+check_dependencies() {
+  local missing=0
 
-  echo "  Note: {{NAME}} and {{DESCRIPTION}} left for agent to fill on first check-in"
-
-  echo "✓ Created ~/AGENTS.md with environment info"
-else
-  echo "• ~/AGENTS.md exists (use --force to overwrite)"
-fi
-
-# Bootstrap brain defaults if empty
-if [ -d "$REPO_DIR/brain" ]; then
-  for f in "$REPO_DIR/brain"/*.jsonl.default; do
-    [ -f "$f" ] || continue
-    target="$BRAIN_DIR/$(basename "${f%.default}")"
-    if [ ! -f "$target" ]; then
-      cp "$f" "$target"
-      echo "✓ Created $(basename "$target")"
+  for cmd in node npm tmux git; do
+    if ! command -v "$cmd" &>/dev/null; then
+      missing=1
+      case "$PLATFORM" in
+        android)
+          echo "⚠ $cmd not found. Installing via pkg..."
+          pkg install -y "$cmd" 2>/dev/null || {
+            echo "Error: Failed to install $cmd via pkg"
+            exit 1
+          }
+          ;;
+        macos)
+          case "$cmd" in
+            node|npm) echo "⚠ $cmd not found. Install with: brew install node" ;;
+            tmux)     echo "⚠ $cmd not found. Install with: brew install tmux" ;;
+            git)      echo "⚠ $cmd not found. Install with: brew install git (or xcode-select --install)" ;;
+          esac
+          ;;
+        linux)
+          local pkg_hint=""
+          if command -v apt &>/dev/null; then
+            case "$cmd" in
+              node|npm) pkg_hint="sudo apt install nodejs npm" ;;
+              *)        pkg_hint="sudo apt install $cmd" ;;
+            esac
+          elif command -v pacman &>/dev/null; then
+            case "$cmd" in
+              node|npm) pkg_hint="sudo pacman -S nodejs npm" ;;
+              *)        pkg_hint="sudo pacman -S $cmd" ;;
+            esac
+          elif command -v dnf &>/dev/null; then
+            case "$cmd" in
+              node|npm) pkg_hint="sudo dnf install nodejs npm" ;;
+              *)        pkg_hint="sudo dnf install $cmd" ;;
+            esac
+          else
+            pkg_hint="Install $cmd using your package manager"
+          fi
+          echo "⚠ $cmd not found. Install with: $pkg_hint"
+          ;;
+      esac
     fi
   done
-fi
 
-# Install rho-daemon scripts to PATH
-if [ -d "$REPO_DIR/scripts" ]; then
-  # Use $PREFIX/bin for Termux, fallback to ~/.local/bin
+  # On desktop, exit if anything was missing (we printed instructions above)
+  if [ "$missing" -eq 1 ] && [ "$PLATFORM" != "android" ]; then
+    echo ""
+    echo "Install missing dependencies and re-run ./install.sh"
+    exit 1
+  fi
+}
+
+# --- Cleanup ---
+
+cleanup_old() {
+  echo "Cleaning up old symlinks..."
+
+  # Extensions: handle both old-style (directory symlink) and new-style (individual file symlinks)
+  if [ -L "$PI_DIR/extensions" ]; then
+    # Old install: extensions/ is a symlink to repo dir. Remove the symlink only.
+    rm -f "$PI_DIR/extensions"
+  elif [ -d "$PI_DIR/extensions" ]; then
+    # New install: extensions/ is a real dir with individual symlinks. Remove symlinks inside.
+    find "$PI_DIR/extensions" -maxdepth 1 -type l -delete 2>/dev/null || true
+    rm -f "$PI_DIR/extensions"/*.ts 2>/dev/null || true
+  fi
+
+  # Skills: handle both old-style (directory symlink) and new-style (individual dir symlinks)
+  if [ -L "$PI_DIR/skills" ]; then
+    # Old install: skills/ is a symlink to repo dir. Remove the symlink only.
+    rm -f "$PI_DIR/skills"
+  elif [ -d "$PI_DIR/skills" ]; then
+    # New install: skills/ is a real dir with individual symlinks. Remove entries inside.
+    for entry in "$PI_DIR/skills"/*/; do
+      [ -e "$entry" ] || [ -L "$entry" ] || continue
+      rm -rf "$entry"
+    done
+  fi
+}
+
+# --- Install Extensions ---
+
+install_extensions() {
+  mkdir -p "$PI_DIR/extensions"
+
+  # Core extensions
+  for f in "$REPO_DIR/extensions"/*.ts; do
+    [ -f "$f" ] || continue
+    ln -sf "$f" "$PI_DIR/extensions/$(basename "$f")"
+  done
+  echo "✓ Symlinked core extensions"
+
+  # Platform extensions
+  local plat_ext="$REPO_DIR/platforms/$PLATFORM/extensions"
+  if [ -d "$plat_ext" ]; then
+    for f in "$plat_ext"/*.ts; do
+      [ -f "$f" ] || continue
+      ln -sf "$f" "$PI_DIR/extensions/$(basename "$f")"
+    done
+    echo "✓ Symlinked $PLATFORM extensions"
+  fi
+}
+
+# --- Install Skills ---
+
+install_skills() {
+  mkdir -p "$PI_DIR/skills"
+
+  # Core skills
+  for d in "$REPO_DIR/skills"/*/; do
+    [ -d "$d" ] || continue
+    ln -sf "$d" "$PI_DIR/skills/$(basename "$d")"
+  done
+  echo "✓ Symlinked core skills"
+
+  # Platform skills
+  local plat_skills="$REPO_DIR/platforms/$PLATFORM/skills"
+  if [ -d "$plat_skills" ]; then
+    for d in "$plat_skills"/*/; do
+      [ -d "$d" ] || continue
+      ln -sf "$d" "$PI_DIR/skills/$(basename "$d")"
+    done
+    echo "✓ Symlinked $PLATFORM skills"
+  fi
+}
+
+# --- Install Scripts ---
+
+install_scripts() {
+  # Determine BIN_DIR
   if [ -n "$PREFIX" ] && [ -d "$PREFIX/bin" ]; then
     BIN_DIR="$PREFIX/bin"
   else
     BIN_DIR="$HOME/.local/bin"
     mkdir -p "$BIN_DIR"
   fi
-  
+
+  # Core scripts (rho, rho-daemon, rho-status, rho-stop, rho-trigger)
   for script in "$REPO_DIR/scripts"/rho "$REPO_DIR/scripts"/rho-*; do
     [ -f "$script" ] || continue
     chmod +x "$script"
     ln -sf "$script" "$BIN_DIR/$(basename "$script")"
-    echo "✓ Installed $(basename "$script") -> $BIN_DIR"
   done
+  echo "✓ Installed scripts -> $BIN_DIR"
 
-  # Install STT scripts (Termux mic binding expects ~/bin)
-  if [ -d "$REPO_DIR/scripts/bin" ]; then
-    STT_BIN_DIR="$HOME/bin"
-    mkdir -p "$STT_BIN_DIR"
-    for script in "$REPO_DIR/scripts/bin"/stt "$REPO_DIR/scripts/bin"/stt-send; do
-      [ -f "$script" ] || continue
-      chmod +x "$script"
-      ln -sf "$script" "$STT_BIN_DIR/$(basename "$script")"
-      echo "✓ Installed $(basename "$script") -> $STT_BIN_DIR"
+  # Platform-specific scripts
+  if [ "$PLATFORM" = "android" ]; then
+    local stt_dir="$REPO_DIR/platforms/android/scripts/bin"
+    if [ -d "$stt_dir" ]; then
+      local stt_bin="$HOME/bin"
+      mkdir -p "$stt_bin"
+      for script in "$stt_dir"/stt "$stt_dir"/stt-send; do
+        [ -f "$script" ] || continue
+        chmod +x "$script"
+        ln -sf "$script" "$stt_bin/$(basename "$script")"
+      done
+      echo "✓ Installed STT scripts -> $stt_bin"
+    fi
+  fi
+
+  # Warn about PATH on non-Termux
+  if [ "$PLATFORM" != "android" ]; then
+    case ":$PATH:" in
+      *":$BIN_DIR:"*) ;;
+      *)
+        echo ""
+        echo "⚠ $BIN_DIR is not in your PATH. Add to your shell profile:"
+        echo "  export PATH=\"$BIN_DIR:\$PATH\""
+        echo ""
+        ;;
+    esac
+  fi
+}
+
+# --- Write Config ---
+
+write_config() {
+  mkdir -p "$CONFIG_DIR"
+  cat > "$CONFIG_DIR/config" <<EOF
+# Rho configuration — generated by install.sh
+# Sourced by rho scripts for portability
+RHO_DIR="$REPO_DIR"
+RHO_PLATFORM="$PLATFORM"
+EOF
+  echo "✓ Wrote config -> $CONFIG_DIR/config"
+}
+
+# --- Bootstrap Templates ---
+
+bootstrap_templates() {
+  # AGENTS.md — has template variables that need substitution
+  if [ ! -f "$HOME/AGENTS.md" ] || [ "$FORCE" -eq 1 ]; then
+    if [ -f "$REPO_DIR/AGENTS.md.template" ]; then
+      # Detect OS string for template
+      local os_string
+      if [ "$PLATFORM" = "android" ]; then
+        os_string="Android / Termux $TERMUX_VERSION"
+      elif [ -f /etc/os-release ]; then
+        os_string=$(grep ^PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
+      else
+        os_string=$(uname -s)
+      fi
+
+      sed -e "s|{{OS}}|$os_string|g" \
+          -e "s|{{ARCH}}|$(uname -m)|g" \
+          -e "s|{{SHELL}}|$(basename "$SHELL")|g" \
+          -e "s|{{HOME}}|$HOME|g" \
+          -e "s|{{CONFIG_PATH}}|$PI_DIR|g" \
+          -e "s|{{BRAIN_PATH}}|$BRAIN_DIR|g" \
+          -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
+          "$REPO_DIR/AGENTS.md.template" > "$HOME/AGENTS.md"
+
+      echo "✓ Created ~/AGENTS.md ({{NAME}} and {{DESCRIPTION}} left for agent)"
+    fi
+  else
+    echo "• ~/AGENTS.md exists (use --force to overwrite)"
+  fi
+
+  # Simple template copies — don't overwrite if they exist
+  local -A templates=(
+    ["RHO.md.template"]="$HOME/RHO.md"
+    ["HEARTBEAT.md.template"]="$HOME/HEARTBEAT.md"
+    ["SOUL.md.template"]="$HOME/SOUL.md"
+  )
+
+  for tmpl in "${!templates[@]}"; do
+    local target="${templates[$tmpl]}"
+    if [ ! -f "$target" ]; then
+      if [ -f "$REPO_DIR/$tmpl" ]; then
+        cp "$REPO_DIR/$tmpl" "$target"
+        echo "✓ Created $target"
+      fi
+    else
+      echo "• $(basename "$target") exists (skipped)"
+    fi
+  done
+}
+
+# --- Bootstrap Brain ---
+
+bootstrap_brain() {
+  mkdir -p "$BRAIN_DIR"
+  if [ -d "$REPO_DIR/brain" ]; then
+    for f in "$REPO_DIR/brain"/*.jsonl.default; do
+      [ -f "$f" ] || continue
+      local target="$BRAIN_DIR/$(basename "${f%.default}")"
+      if [ ! -f "$target" ]; then
+        cp "$f" "$target"
+        echo "✓ Created $(basename "$target")"
+      fi
     done
   fi
-fi
+}
 
-# Bootstrap RHO.md if doesn't exist
-if [ ! -f "$HOME/RHO.md" ]; then
-  cp "$REPO_DIR/RHO.md.template" "$HOME/RHO.md"
-  echo "✓ Created ~/RHO.md (customize your check-in checklist)"
-fi
+# --- Platform Setup ---
 
-# Bootstrap HEARTBEAT.md if doesn't exist
-if [ ! -f "$HOME/HEARTBEAT.md" ]; then
-  cp "$REPO_DIR/HEARTBEAT.md.template" "$HOME/HEARTBEAT.md"
-  echo "✓ Created ~/HEARTBEAT.md (scheduled tasks for check-ins)"
-fi
+run_platform_setup() {
+  local setup="$REPO_DIR/platforms/$PLATFORM/setup.sh"
+  if [ -f "$setup" ]; then
+    echo ""
+    chmod +x "$setup"
+    bash "$setup"
+  fi
+}
 
-# Check for API keys
-if [ -z "$BRAVE_API_KEY" ]; then
-  echo ""
-  echo "⚠ BRAVE_API_KEY not set. Add to ~/.bashrc:"
-  echo '  export BRAVE_API_KEY="your-key"'
-fi
+# --- Main ---
 
-# Check for tmux
-if ! command -v tmux &> /dev/null; then
-  echo ""
-  echo "⚠ tmux not found. Install for background daemon:"
-  echo '  pkg install tmux'
-fi
+echo "Installing Rho..."
+echo ""
+
+detect_platform
+check_dependencies
+cleanup_old
+install_extensions
+install_skills
+install_scripts
+write_config
+bootstrap_templates
+bootstrap_brain
+run_platform_setup
 
 echo ""
-echo "Done! Run /reload in pi to load extensions."
+echo "Done! Platform: $PLATFORM"
 echo ""
-echo "To start rho daemon:"
-echo '  rho-daemon      # Background with periodic check-ins'
-echo '  rho-stop        # Stop daemon'
-echo '  rho-trigger     # Manual check-in'
+echo "Next steps:"
+echo "  1. Run /reload in pi to load extensions"
+echo "  2. Start the daemon: rho-daemon"
+echo "  3. Customize: ~/SOUL.md, ~/HEARTBEAT.md, ~/RHO.md"
