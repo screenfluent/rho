@@ -1,6 +1,7 @@
 {
   "name": "@rhobot-dev/rho",
   "version": "0.1.0",
+  "type": "module",
   "description": "AI agent with persistent memory, heartbeat check-ins, and a knowledge vault",
   "keywords": ["pi-package"],
   "homepage": "https://rhobot.dev",

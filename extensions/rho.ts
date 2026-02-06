@@ -600,250 +600,22 @@ async function runAutoMemoryExtraction(
   return { storedLearnings, storedPrefs };
 }
 
-// ─── Brain: Memory Consolidation ──────────────────────────────────────────────
+// ─── Brain: Remove Entry ──────────────────────────────────────────────────────
 
-function tokenize(text: string): Set<string> {
-  return new Set(
-    text.toLowerCase().replace(/[^a-z0-9\s/._-]/g, "").split(/\s+/).filter(w => w.length > 2)
-  );
-}
-
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 && b.size === 0) return 1;
-  let intersection = 0;
-  for (const w of a) { if (b.has(w)) intersection++; }
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
-
-const JACCARD_THRESHOLD = 0.6;
-const CONTAINMENT_THRESHOLD = 0.8;
-
-function containmentRatio(smaller: Set<string>, larger: Set<string>): number {
-  if (smaller.size === 0) return 1;
-  let contained = 0;
-  for (const w of smaller) { if (larger.has(w)) contained++; }
-  return contained / smaller.size;
-}
-
-function deterministicDedup(entries: Entry[]): { kept: Entry[]; removed: Entry[] } {
-  const learnings = entries.filter((e): e is LearningEntry => e.type === "learning");
-  const preferences = entries.filter((e): e is PreferenceEntry => e.type === "preference");
-  const others = entries.filter(e => e.type !== "learning" && e.type !== "preference");
-
-  function dedupGroup<T extends LearningEntry | PreferenceEntry>(
-    items: T[],
-    getText: (e: T) => string
-  ): { kept: T[]; removed: T[] } {
-    const tokenized = items.map(e => ({ entry: e, tokens: tokenize(getText(e)), len: getText(e).length }));
-    const removed = new Set<string>();
-
-    const clusters: T[][] = [];
-    for (let i = 0; i < tokenized.length; i++) {
-      if (removed.has(tokenized[i].entry.id)) continue;
-      const cluster: T[] = [tokenized[i].entry];
-      for (let j = i + 1; j < tokenized.length; j++) {
-        if (removed.has(tokenized[j].entry.id)) continue;
-        if (jaccardSimilarity(tokenized[i].tokens, tokenized[j].tokens) >= JACCARD_THRESHOLD) {
-          cluster.push(tokenized[j].entry);
-          removed.add(tokenized[j].entry.id);
-        }
-      }
-      clusters.push(cluster);
-    }
-
-    const keptAfterJaccard: T[] = [];
-    const removedEntries: T[] = [];
-    for (const cluster of clusters) {
-      const sorted = cluster.sort((a, b) => getText(b).length - getText(a).length);
-      keptAfterJaccard.push(sorted[0]);
-      removedEntries.push(...sorted.slice(1));
-    }
-
-    const keptTokenized = keptAfterJaccard.map(e => ({ entry: e, tokens: tokenize(getText(e)), len: getText(e).length }));
-    const containmentRemoved = new Set<string>();
-    for (let i = 0; i < keptTokenized.length; i++) {
-      if (containmentRemoved.has(keptTokenized[i].entry.id)) continue;
-      for (let j = 0; j < keptTokenized.length; j++) {
-        if (i === j || containmentRemoved.has(keptTokenized[j].entry.id)) continue;
-        if (keptTokenized[j].len < keptTokenized[i].len) {
-          if (containmentRatio(keptTokenized[j].tokens, keptTokenized[i].tokens) >= CONTAINMENT_THRESHOLD) {
-            containmentRemoved.add(keptTokenized[j].entry.id);
-          }
-        }
-      }
-    }
-
-    const finalKept = keptAfterJaccard.filter(e => !containmentRemoved.has(e.id));
-    const containmentRemovedEntries = keptAfterJaccard.filter(e => containmentRemoved.has(e.id));
-
-    return { kept: finalKept, removed: [...removedEntries, ...containmentRemovedEntries] };
-  }
-
-  const dedupedLearnings = dedupGroup(learnings, e => e.text);
-  const dedupedPreferences = dedupGroup(preferences, e => e.text);
-
-  return {
-    kept: [...others, ...dedupedLearnings.kept, ...dedupedPreferences.kept],
-    removed: [...dedupedLearnings.removed, ...dedupedPreferences.removed],
-  };
-}
-
-type SemanticResponse = {
-  remove: string[];
-  rewrite: Array<{ id: string; text: string }>;
-};
-
-function buildSemanticPrompt(entries: Entry[]): string {
-  const learnings = entries.filter((e): e is LearningEntry => e.type === "learning");
-  const preferences = entries.filter((e): e is PreferenceEntry => e.type === "preference");
-
-  let entriesText = "LEARNINGS:\n";
-  for (const l of learnings) entriesText += `[${l.id}] ${l.text}\n`;
-  entriesText += "\nPREFERENCES:\n";
-  for (const p of preferences) entriesText += `[${p.id}] [${p.category}] ${p.text}\n`;
-
-  return [
-    "You are a memory consolidation system. Review these entries and identify IDs to REMOVE.",
-    "",
-    "ONLY remove entries that are clearly one of:",
-    "1. SEMANTIC DUPLICATES: nearly identical meaning to another entry (keep the longer one, remove the shorter)",
-    "2. SUPERSEDED: directly contradicted by a newer entry about the same specific topic",
-    "",
-    "KEEP everything else. When in doubt, KEEP. Be very conservative.",
-    "Do NOT remove: environment setup, API details, config paths, tool usage patterns, architecture facts, user preferences.",
-    "Do NOT remove entries just because they seem old or specific -- specificity is valuable.",
-    "",
-    "Also identify entries to REWRITE: where 2 entries about the exact same topic should merge (use the surviving entry's ID).",
-    "",
-    entriesText,
-    "",
-    "IMPORTANT: Output ONLY a JSON object with two keys: 'remove' (array of IDs to delete) and 'rewrite' (array of {id, text} to update).",
-    "Do NOT return all entries. Do NOT echo back entries you want to keep. ONLY list changes.",
-    "No markdown, no code fences, no explanation. Raw JSON only.",
-    "Example: {\"remove\":[\"abc\",\"def\"],\"rewrite\":[{\"id\":\"ghi\",\"text\":\"merged text\"}]}",
-  ].join("\n");
-}
-
-function parseSemanticResponse(text: string): SemanticResponse | null {
-  const jsonText = extractJsonObject(text);
-  if (!jsonText) return null;
-  try {
-    const parsed = JSON.parse(jsonText);
-    if (!Array.isArray(parsed.remove)) return null;
-    if (!Array.isArray(parsed.rewrite)) return null;
-    return parsed as SemanticResponse;
-  } catch {
-    return null;
-  }
-}
-
-async function runConsolidation(
-  ctx: ExtensionContext,
-  options?: { signal?: AbortSignal; dryRun?: boolean }
-): Promise<{ before: number; after: number; removed: number; error?: string } | null> {
+function removeMemoryEntry(id: string): { ok: boolean; message: string } {
   const entries = readJsonl<Entry>(MEMORY_FILE);
-  if (entries.length < 5) return { before: entries.length, after: entries.length, removed: 0, error: "too few entries (< 5)" };
+  const idx = entries.findIndex((e) => e.id === id);
+  if (idx === -1) return { ok: false, message: `Entry '${id}' not found` };
 
-  const { kept: phase1Kept, removed: phase1Removed } = deterministicDedup(entries);
-  const phase1Count = phase1Removed.length;
+  const entry = entries[idx];
+  const text = (entry as LearningEntry | PreferenceEntry).text || "(unknown)";
 
-  let phase2Removes: string[] = [];
-  let phase2Rewrites: SemanticResponse["rewrite"] = [];
-  let llmError: string | undefined;
+  // Archive before removing
+  appendJsonl(ARCHIVE_FILE, { ...entry, archived: today(), reason: "manual" });
 
-  const resolved = await resolveSmallModel(ctx);
-  if (resolved && phase1Kept.length > 5) {
-    const candidates = [resolved];
-    if (resolved.model.id !== ctx.model?.id && ctx.model) {
-      const fallbackKey = await ctx.modelRegistry.getApiKey(ctx.model);
-      if (fallbackKey) candidates.push({ model: ctx.model, apiKey: fallbackKey });
-    }
-
-    const prompt = buildSemanticPrompt(phase1Kept);
-    let semantic: SemanticResponse | null = null;
-
-    for (const { model, apiKey } of candidates) {
-      if (options?.signal?.aborted) break;
-      try {
-        const maxTokens = Math.min(4096, model.maxTokens || 4096);
-        const result = await complete(
-          model,
-          {
-            messages: [
-              { role: "user" as const, content: [{ type: "text" as const, text: prompt }], timestamp: Date.now() },
-              { role: "assistant" as const, content: [{ type: "text" as const, text: '{"remove":[' }], timestamp: Date.now() },
-            ],
-          },
-          { apiKey, maxTokens, signal: options?.signal }
-        );
-        if (result.stopReason === "error") {
-          llmError = `${model.id}: ${result.errorMessage || "error"}`;
-          continue;
-        }
-        const responseText = result.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text).join("\n").trim();
-        semantic = parseSemanticResponse('{"remove":[' + responseText);
-        if (semantic) break;
-        llmError = `${model.id}: JSON parse failed`;
-      } catch (e) {
-        llmError = `${model.id}: ${e instanceof Error ? e.message : String(e)}`;
-      }
-    }
-
-    if (semantic) {
-      const maxRemoves = Math.max(5, Math.floor(phase1Kept.length * 0.15));
-      phase2Removes = semantic.remove.slice(0, maxRemoves);
-      phase2Rewrites = semantic.rewrite.slice(0, 20);
-    }
-  }
-
-  const removeSet = new Set(phase2Removes);
-  const rewriteMap = new Map(phase2Rewrites.map(r => [r.id, r.text]));
-
-  const newEntries: Entry[] = [];
-  for (const entry of phase1Kept) {
-    if (removeSet.has(entry.id)) continue;
-    const rewrite = rewriteMap.get(entry.id);
-    if (rewrite) {
-      const normalized = normalizeMemoryText(rewrite);
-      if (entry.type === "learning") {
-        newEntries.push({ ...entry, text: normalized, last_used: today() } as LearningEntry);
-      } else if (entry.type === "preference") {
-        newEntries.push({ ...entry, text: normalized } as PreferenceEntry);
-      } else {
-        newEntries.push(entry);
-      }
-    } else {
-      newEntries.push(entry);
-    }
-  }
-
-  const before = entries.length;
-  const after = newEntries.length;
-  const totalRemoved = before - after;
-
-  if (options?.dryRun) {
-    return { before, after, removed: totalRemoved, error: llmError ? `phase2: ${llmError}` : undefined };
-  }
-
-  if (after < before * 0.6) {
-    return { before, after, removed: totalRemoved, error: `too aggressive: ${after}/${before} kept (${Math.round(after/before*100)}%), need > 60%` };
-  }
-
-  const keptIds = new Set(newEntries.map(e => e.id));
-  const allRemoved = entries.filter(e => !keptIds.has(e.id));
-  if (allRemoved.length > 0) {
-    ensureRhoDir();
-    for (const r of allRemoved) {
-      appendJsonl(ARCHIVE_FILE, { ...r, archived: today(), reason: "consolidation" });
-    }
-  }
-
-  writeJsonl(MEMORY_FILE, newEntries);
-
-  return { before, after, removed: totalRemoved, error: llmError ? `phase2: ${llmError}` : undefined };
+  entries.splice(idx, 1);
+  writeJsonl(MEMORY_FILE, entries);
+  return { ok: true, message: `Removed [${id}]: ${text}` };
 }
 
 // ─── Brain: Legacy Migration ──────────────────────────────────────────────────
@@ -2021,9 +1793,11 @@ export default function (pi: ExtensionAPI) {
     name: "memory",
     label: "Memory",
     description:
-      "Store learnings (corrections, patterns, conventions) or preferences (user likes/dislikes with category). Use after user corrections or when discovering something future sessions need. Actions: add_learning, add_preference, reinforce, search, list, consolidate.",
+      "Store learnings (corrections, patterns, conventions) or preferences (user likes/dislikes with category). " +
+      "Use after user corrections or when discovering something future sessions need. " +
+      "Actions: add_learning, add_preference, reinforce, remove (by ID), search, list.",
     parameters: Type.Object({
-      action: StringEnum(["add_learning", "add_preference", "reinforce", "search", "list", "consolidate"] as const),
+      action: StringEnum(["add_learning", "add_preference", "reinforce", "remove", "search", "list"] as const),
       content: Type.Optional(Type.String({ description: "Concise, actionable text" })),
       category: Type.Optional(Type.String({ description: "Category: Communication, Code, Tools, Workflow, General" })),
       query: Type.Optional(Type.String({ description: "Search query" })),
@@ -2092,18 +1866,11 @@ export default function (pi: ExtensionAPI) {
           return { content: [{ type: "text", text }], details: { learnings: ls.length, preferences: ps.length } };
         }
 
-        case "consolidate": {
-          try {
-            const result = await runConsolidation(ctx);
-            if (!result) return { content: [{ type: "text", text: "Consolidation returned null (unexpected)." }], details: { error: true } };
-            if (result.removed === 0 && result.error) return { content: [{ type: "text", text: `Consolidation failed: ${result.error}` }], details: result };
-            updateBrainWidget(ctx);
-            const msg = `Consolidated: ${result.before} → ${result.after} entries (removed ${result.removed}).`;
-            const warning = result.error ? ` Note: ${result.error}` : "";
-            return { content: [{ type: "text", text: msg + warning }], details: result };
-          } catch (error) {
-            return { content: [{ type: "text", text: `Consolidation error: ${error instanceof Error ? error.message : String(error)}` }], details: { error: true } };
-          }
+        case "remove": {
+          if (!params.id) return { content: [{ type: "text", text: "Error: id required" }], details: { error: true } };
+          const result = removeMemoryEntry(params.id);
+          if (result.ok) updateBrainWidget(ctx);
+          return { content: [{ type: "text", text: result.message }], details: { ok: result.ok } };
         }
 
         default:
@@ -2477,7 +2244,7 @@ export default function (pi: ExtensionAPI) {
   // ── Command: /brain ────────────────────────────────────────────────────────
 
   pi.registerCommand("brain", {
-    description: "View brain stats or search (usage: /brain [stats|search <query>|consolidate])",
+    description: "View brain stats or search (usage: /brain [stats|search <query>])",
     handler: async (args, ctx) => {
       const parts = args?.trim().split(/\s+/) || [];
       const subcmd = parts[0] || "stats";
@@ -2500,18 +2267,8 @@ export default function (pi: ExtensionAPI) {
           return false;
         });
         ctx.ui.notify(matches.length ? `Found ${matches.length} matches` : "No matches", "info");
-      } else if (subcmd === "consolidate") {
-        ctx.ui.notify("🧠 Consolidating memories...", "info");
-        try {
-          const result = await runConsolidation(ctx);
-          if (!result) { ctx.ui.notify("🧠 Consolidation returned null", "warning"); }
-          else if (result.removed === 0 && result.error) { ctx.ui.notify(`🧠 Failed: ${result.error}`, "warning"); }
-          else { ctx.ui.notify(`🧠 ${result.before} → ${result.after} (removed ${result.removed})`, "info"); updateBrainWidget(ctx); }
-        } catch (error) {
-          ctx.ui.notify(`🧠 Error: ${error instanceof Error ? error.message : String(error)}`, "error");
-        }
       } else {
-        ctx.ui.notify("Usage: /brain [stats|search <query>|consolidate]", "error");
+        ctx.ui.notify("Usage: /brain [stats|search <query>]", "error");
       }
     },
   });
