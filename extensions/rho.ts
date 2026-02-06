@@ -69,6 +69,7 @@ const MAX_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours maximum
 const RHO_DIR = join(process.env.HOME || "", ".rho");
 const LEGACY_STATE_PATH = join(process.env.HOME || "", ".pi", "agent", "rho-state.json");
 const STATE_PATH = join(RHO_DIR, "rho-state.json");
+const CONFIG_PATH = join(RHO_DIR, "config.json");
 const RESULTS_DIR = join(process.env.HOME || "", ".rho", "results");
 const HEARTBEAT_PROMPT_FILE = join(process.env.HOME || "", ".rho", "heartbeat-prompt.txt");
 const DEFAULT_SESSION_NAME = "rho";
@@ -164,6 +165,58 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		return null;
+	};
+
+	interface RhoConfig {
+		autoMemory?: boolean;
+	}
+
+	const loadConfigFromDisk = (): RhoConfig => {
+		try {
+			const raw = readFileSync(CONFIG_PATH, "utf-8");
+			const parsed = JSON.parse(raw) as unknown;
+			if (parsed && typeof parsed === "object") {
+				const obj = parsed as Record<string, unknown>;
+				const autoMemory =
+					typeof obj.autoMemory === "boolean"
+						? (obj.autoMemory as boolean)
+						: typeof obj.auto_memory === "boolean"
+							? (obj.auto_memory as boolean)
+							: undefined;
+				return { autoMemory };
+			}
+		} catch {
+			// ignore
+		}
+		return {};
+	};
+
+	const saveConfigToDisk = (next: RhoConfig) => {
+		try {
+			mkdirSync(RHO_DIR, { recursive: true });
+			let base: Record<string, unknown> = {};
+			try {
+				const raw = readFileSync(CONFIG_PATH, "utf-8");
+				const parsed = JSON.parse(raw) as unknown;
+				if (parsed && typeof parsed === "object") base = parsed as Record<string, unknown>;
+			} catch {
+				// ignore
+			}
+			if (typeof next.autoMemory === "boolean") base.autoMemory = next.autoMemory;
+			writeFileSync(CONFIG_PATH, JSON.stringify(base, null, 2));
+		} catch {
+			// ignore
+		}
+	};
+
+	const getAutoMemoryEffective = (): { enabled: boolean; source: "env" | "config" | "default" } => {
+		const env = (process.env.RHO_AUTO_MEMORY || "").trim().toLowerCase();
+		if (env === "0" || env === "false" || env === "off") return { enabled: false, source: "env" };
+		if (env === "1" || env === "true" || env === "on") return { enabled: true, source: "env" };
+
+		const cfg = loadConfigFromDisk();
+		if (typeof cfg.autoMemory === "boolean") return { enabled: cfg.autoMemory, source: "config" };
+		return { enabled: true, source: "default" };
 	};
 
 	const loadStateFromDisk = () => {
@@ -943,7 +996,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Register /rho command
 	pi.registerCommand("rho", {
-		description: "Control rho check-in system: status, enable, disable, now, interval <time>, model <auto|provider/model>",
+		description: "Control rho check-in system: status, enable, disable, now, interval <time>, model <auto|provider/model>, automemory <on|off|toggle>",
 		handler: async (args, ctx) => {
 			const [subcmd, ...rest] = args.trim().split(/\s+/);
 			const arg = rest.join(" ");
@@ -959,10 +1012,12 @@ export default function (pi: ExtensionAPI) {
 					} else {
 						modelInfo = "auto";
 					}
+					const am = getAutoMemoryEffective();
 					ctx.ui.notify(
 						`Rho: ${state.enabled ? "enabled" : "disabled"}, ` +
 						`interval: ${formatInterval(state.intervalMs)}, ` +
 						`model: ${modelInfo}, ` +
+						`auto-memory: ${am.enabled ? "on" : "off"} (${am.source}), ` +
 						`count: ${state.checkCount}`,
 						"info"
 					);
@@ -1019,6 +1074,40 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 
+				case "automemory": {
+					const mode = arg.trim().toLowerCase();
+					const current = getAutoMemoryEffective();
+					const cfg = loadConfigFromDisk();
+					const cfgVal = typeof cfg.autoMemory === "boolean" ? cfg.autoMemory : undefined;
+
+					if (!mode || mode === "status") {
+						let text = `Auto-memory: ${current.enabled ? "on" : "off"} (${current.source})`;
+						if (cfgVal !== undefined) text += `, config=${cfgVal ? "on" : "off"}`;
+						const envRaw = (process.env.RHO_AUTO_MEMORY || "").trim();
+						if (envRaw) text += `, env=${envRaw}`;
+						ctx.ui.notify(text, "info");
+						return;
+					}
+
+					let nextConfig: boolean;
+					if (mode === "on") nextConfig = true;
+					else if (mode === "off") nextConfig = false;
+					else if (mode === "toggle") nextConfig = !(typeof cfgVal === "boolean" ? cfgVal : true);
+					else {
+						ctx.ui.notify("Usage: /rho automemory [on|off|toggle|status]", "warning");
+						return;
+					}
+
+					saveConfigToDisk({ autoMemory: nextConfig });
+
+					const after = getAutoMemoryEffective();
+					if (after.source === "env") {
+						ctx.ui.notify("Note: RHO_AUTO_MEMORY env var overrides config", "warning");
+					}
+					ctx.ui.notify(`Auto-memory: ${after.enabled ? "on" : "off"} (${after.source})`, "success");
+					break;
+				}
+
 				case "model": {
 					if (!arg) {
 						let modelDisplay: string;
@@ -1060,8 +1149,8 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				default:
-					ctx.ui.notify("Usage: /rho [status|enable|disable|now|interval|model]", "warning");
-					ctx.ui.notify("Examples: /rho now, /rho interval 30m, /rho model auto", "info");
+					ctx.ui.notify("Usage: /rho [status|enable|disable|now|interval|model|automemory]", "warning");
+					ctx.ui.notify("Examples: /rho now, /rho interval 30m, /rho model auto, /rho automemory toggle", "info");
 			}
 		},
 	});

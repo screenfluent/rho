@@ -33,8 +33,52 @@ const CONTEXT_FILE = path.join(BRAIN_DIR, "context.jsonl");
 const ARCHIVE_FILE = path.join(BRAIN_DIR, "archive.jsonl");
 const DAILY_MEMORY_DIR = path.join(BRAIN_DIR, "memory");
 
-// Auto-memory config — disabled for subagent/heartbeat sessions
-const AUTO_MEMORY_ENABLED = process.env.RHO_AUTO_MEMORY !== "0" && process.env.RHO_SUBAGENT !== "1";
+// Auto-memory config
+// - Disabled for subagent/heartbeat sessions (RHO_SUBAGENT=1)
+// - Can be overridden via env var RHO_AUTO_MEMORY=0|1
+// - Persisted toggle via ~/.rho/config.json { "autoMemory": true|false }
+const RHO_CONFIG_PATH = path.join(RHO_DIR, "config.json");
+
+type RhoConfig = {
+  autoMemory?: boolean;
+};
+
+function readRhoConfig(): RhoConfig {
+  try {
+    if (!fs.existsSync(RHO_CONFIG_PATH)) return {};
+    const raw = fs.readFileSync(RHO_CONFIG_PATH, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      // Accept both camelCase and snake_case for safety
+      const autoMemory =
+        typeof obj.autoMemory === "boolean"
+          ? (obj.autoMemory as boolean)
+          : typeof obj.auto_memory === "boolean"
+            ? (obj.auto_memory as boolean)
+            : undefined;
+      return { autoMemory };
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function isAutoMemoryEnabled(): boolean {
+  if (process.env.RHO_SUBAGENT === "1") return false;
+
+  const env = (process.env.RHO_AUTO_MEMORY || "").trim().toLowerCase();
+  if (env === "0" || env === "false" || env === "off") return false;
+  if (env === "1" || env === "true" || env === "on") return true;
+
+  const cfg = readRhoConfig();
+  if (typeof cfg.autoMemory === "boolean") return cfg.autoMemory;
+
+  // Default: enabled
+  return true;
+}
+
 const AUTO_MEMORY_DEBUG = process.env.RHO_AUTO_MEMORY_DEBUG === "1" || process.env.RHO_AUTO_MEMORY_DEBUG === "true";
 const AUTO_MEMORY_MAX_ITEMS = 3;
 const AUTO_MEMORY_MAX_TEXT = 200;
@@ -345,7 +389,7 @@ async function runAutoMemoryExtraction(
   ctx: ExtensionContext,
   options?: { source?: string; signal?: AbortSignal; maxItems?: number; maxText?: number }
 ): Promise<{ storedLearnings: number; storedPrefs: number } | null> {
-  if (!AUTO_MEMORY_ENABLED) return null;
+  if (!isAutoMemoryEnabled()) return null;
 
   const resolved = await resolveSmallModel(ctx);
   if (!resolved) return null;
@@ -881,7 +925,7 @@ export default function (pi: ExtensionAPI) {
 
   // LLM-based auto-memory extraction
   pi.on("agent_end", async (event, ctx) => {
-    if (!AUTO_MEMORY_ENABLED || autoMemoryInFlight) return;
+    if (!isAutoMemoryEnabled() || autoMemoryInFlight) return;
     autoMemoryInFlight = true;
     try {
       const result = await runAutoMemoryExtraction(event.messages, ctx, { source: "auto" });
@@ -900,7 +944,7 @@ export default function (pi: ExtensionAPI) {
 
   // Pre-compaction memory flush
   pi.on("session_before_compact", async (event, ctx) => {
-    if (!AUTO_MEMORY_ENABLED || !COMPACT_MEMORY_FLUSH_ENABLED || compactMemoryInFlight) return;
+    if (!isAutoMemoryEnabled() || !COMPACT_MEMORY_FLUSH_ENABLED || compactMemoryInFlight) return;
     if (event.signal.aborted) return;
 
     const messages = Array.from(
