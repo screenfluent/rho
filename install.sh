@@ -336,7 +336,8 @@ install_tmux_config() {
 
   if [ ! -f "$dest" ]; then
     cp "$src" "$dest"
-    echo "✓ Installed rho tmux config -> ~/.rho/tmux.conf"
+    echo "✓ Installed tmux config template -> ~/.rho/tmux.conf"
+    echo "  (rho uses the built-in tmux config by default; set settings.heartbeat.tmux_config to use this file)"
   else
     echo "• ~/.rho/tmux.conf exists (skipped)"
   fi

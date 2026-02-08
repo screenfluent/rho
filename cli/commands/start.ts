@@ -30,8 +30,6 @@ const RHO_DIR = path.join(HOME, ".rho");
 const PID_PATH = path.join(HOME, PID_FILE);
 const INIT_TOML = path.join(RHO_DIR, "init.toml");
 
-const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
-const TMUX_CONF_OVERRIDE = (process.env.RHO_TMUX_CONF || "").trim();
 const TMUX_CONF_FALLBACK = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -40,16 +38,52 @@ const TMUX_CONF_FALLBACK = path.resolve(
   "tmux-rho.conf",
 );
 
+function expandHome(p: string): string {
+  if (p === "~") return HOME;
+  if (p.startsWith("~/")) return path.join(HOME, p.slice(2));
+  return p;
+}
+
+function readInitConfig(): ReturnType<typeof parseInitToml> | null {
+  try {
+    if (!existsSync(INIT_TOML)) return null;
+    return parseInitToml(readFileSync(INIT_TOML, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function getTmuxSocket(): string {
+  const env = (process.env.RHO_TMUX_SOCKET || "").trim();
+  if (env) return env;
+
+  const cfg = readInitConfig();
+  const fromToml = (cfg?.settings as any)?.heartbeat?.tmux_socket;
+  if (typeof fromToml === "string" && fromToml.trim()) return fromToml.trim();
+
+  return "rho";
+}
+
+function getTmuxConfigSetting(): string | null {
+  const env = (process.env.RHO_TMUX_CONF || "").trim();
+  if (env) return env;
+
+  const cfg = readInitConfig();
+  const fromToml = (cfg?.settings as any)?.heartbeat?.tmux_config;
+  if (typeof fromToml === "string" && fromToml.trim()) return fromToml.trim();
+
+  return null;
+}
+
 function getTmuxConfPath(): string {
-  if (TMUX_CONF_OVERRIDE) return TMUX_CONF_OVERRIDE;
-  const userConf = path.join(RHO_DIR, "tmux.conf");
-  if (existsSync(userConf)) return userConf;
-  return TMUX_CONF_FALLBACK;
+  const setting = getTmuxConfigSetting();
+  if (!setting || setting === "builtin" || setting === "rho") return TMUX_CONF_FALLBACK;
+  return expandHome(setting);
 }
 
 function tmuxBaseArgs(): string[] {
   // Always use a dedicated socket so we don't interfere with the user's default tmux server.
-  return ["-L", TMUX_SOCKET, "-f", getTmuxConfPath()];
+  return ["-L", getTmuxSocket(), "-f", getTmuxConfPath()];
 }
 
 function tmuxSessionExists(): boolean {
@@ -126,7 +160,7 @@ function showNotification(interval: string): void {
   const tmuxBin = getCommandPath("tmux") || "tmux";
 
   try {
-    const notif = buildNotificationArgs(tmuxBin, interval, TMUX_SOCKET);
+    const notif = buildNotificationArgs(tmuxBin, interval, getTmuxSocket());
     const cliArgs = notificationToCliArgs(notif);
     spawnSync("termux-notification", cliArgs, { stdio: "ignore" });
   } catch {
@@ -257,7 +291,7 @@ Options:
         spawnSync("tmux", [...tmuxBaseArgs(), "attach", "-t", plan.sessionName], { stdio: "inherit" });
       } else {
         console.log("Rho already running.");
-        console.log(`Attach with: tmux -L ${TMUX_SOCKET} attach -t ${plan.sessionName}`);
+        console.log(`Attach with: tmux -L ${getTmuxSocket()} attach -t ${plan.sessionName}`);
       }
       return;
     }
@@ -299,7 +333,7 @@ Options:
   if (foreground) {
     spawnSync("tmux", [...tmuxBaseArgs(), "attach", "-t", plan.sessionName], { stdio: "inherit" });
   } else {
-    console.log(`Attach with: tmux -L ${TMUX_SOCKET} attach -t ${plan.sessionName}`);
+    console.log(`Attach with: tmux -L ${getTmuxSocket()} attach -t ${plan.sessionName}`);
   }
 }
 

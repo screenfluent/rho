@@ -41,6 +41,11 @@ moltbook = true                       # Moltbook viewer
 interval = "30m"                      # Check-in interval (e.g., "15m", "1h", "2h")
 # prompt = "~/.rho/heartbeat-prompt.txt"  # Custom heartbeat prompt
 
+# Tmux integration (used by `rho start/stop/status/trigger`)
+# tmux_socket = "rho"                 # Name of the dedicated tmux socket (passed as: tmux -L <socket>)
+# tmux_config = "builtin"             # "builtin" = use the tmux config shipped with your installed rho version
+# tmux_config = "~/.rho/tmux.conf"    # Or set an explicit path to your own tmux config
+
 [settings.email]
 # handle = ""                         # Your rhobot.dev email handle
 

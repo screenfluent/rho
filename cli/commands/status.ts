@@ -26,10 +26,28 @@ const PID_PATH = path.join(HOME, PID_FILE);
 const INIT_TOML = path.join(RHO_DIR, "init.toml");
 const HB_STATE_PATH = path.join(RHO_DIR, "rho-state.json");
 
-const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
+function readInitConfig(): ReturnType<typeof parseInitToml> | null {
+  try {
+    if (!existsSync(INIT_TOML)) return null;
+    return parseInitToml(readFileSync(INIT_TOML, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function getTmuxSocket(): string {
+  const env = (process.env.RHO_TMUX_SOCKET || "").trim();
+  if (env) return env;
+
+  const cfg = readInitConfig();
+  const fromToml = (cfg?.settings as any)?.heartbeat?.tmux_socket;
+  if (typeof fromToml === "string" && fromToml.trim()) return fromToml.trim();
+
+  return "rho";
+}
 
 function tmuxArgs(args: string[]): string[] {
-  return ["-L", TMUX_SOCKET, ...args];
+  return ["-L", getTmuxSocket(), ...args];
 }
 
 function tmuxSessionExists(): boolean {
