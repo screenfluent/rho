@@ -105,7 +105,7 @@ console.log("\n=== buildNotificationArgs ===\n");
   assertEq(args.content, "Check-ins active (30m)", "default content with 30m");
   assertEq(args.id, "rho-daemon", "notification id");
   assertEq(args.ongoing, true, "is ongoing");
-  assert(args.action.includes("tmux attach -t rho"), "action attaches to session");
+  assert(args.action.includes("-L rho attach -t rho"), "action attaches to session (rho socket)");
   assert(args.button1Action.includes("/rho now"), "button triggers check-in");
 }
 
@@ -115,6 +115,10 @@ console.log("\n=== buildNotificationArgs ===\n");
   assert(
     args.action.startsWith("/data/data/com.termux/files/usr/bin/tmux"),
     "uses full tmux path",
+  );
+  assert(
+    args.action.includes("-L rho"),
+    "uses rho socket",
   );
   assert(
     args.button1Action.startsWith("/data/data/com.termux/files/usr/bin/tmux"),

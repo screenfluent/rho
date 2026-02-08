@@ -9,9 +9,26 @@ import { spawnSync } from "node:child_process";
 
 import { SESSION_NAME } from "../daemon-core.ts";
 
+const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
+
+function tmuxArgs(args: string[]): string[] {
+  return ["-L", TMUX_SOCKET, ...args];
+}
+
 function tmuxSessionExists(): boolean {
+  const r = spawnSync("tmux", tmuxArgs(["has-session", "-t", SESSION_NAME]), { stdio: "ignore" });
+  return r.status === 0;
+}
+
+function tmuxLegacySessionExists(): boolean {
   const r = spawnSync("tmux", ["has-session", "-t", SESSION_NAME], { stdio: "ignore" });
   return r.status === 0;
+}
+
+function getActiveTmuxArgs(): string[] | null {
+  if (tmuxSessionExists()) return tmuxArgs([]);
+  if (tmuxLegacySessionExists()) return [];
+  return null;
 }
 
 export async function run(args: string[]): Promise<void> {
@@ -28,7 +45,7 @@ Options:
     return;
   }
 
-  if (!tmuxSessionExists()) {
+  if (!getActiveTmuxArgs()) {
     console.log("Rho not running. Starting...");
     const { run: startRun } = await import("./start.ts");
     await startRun([]);
@@ -36,14 +53,20 @@ Options:
     // Give tmux/pi a moment to initialize.
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    if (!tmuxSessionExists()) {
+    if (!getActiveTmuxArgs()) {
       console.error("Failed to start rho daemon.");
       process.exit(1);
     }
   }
 
+  const active = getActiveTmuxArgs();
+  if (!active) {
+    console.error("Failed to trigger check-in (tmux session missing). Try: rho start");
+    process.exit(1);
+  }
+
   // Send check-in command
-  const r = spawnSync("tmux", ["send-keys", "-t", SESSION_NAME, "/rho now", "Enter"], { stdio: "ignore" });
+  const r = spawnSync("tmux", [...active, "send-keys", "-t", SESSION_NAME, "/rho now", "Enter"], { stdio: "ignore" });
   if (r.status !== 0) {
     console.error("Failed to trigger check-in.");
     process.exit(1);
@@ -52,5 +75,5 @@ Options:
   console.log("Heartbeat check-in triggered.");
 
   // Show tmux display message if possible
-  spawnSync("tmux", ["display-message", "-t", SESSION_NAME, "Rho check-in triggered"], { stdio: "ignore" });
+  spawnSync("tmux", [...active, "display-message", "-t", SESSION_NAME, "Rho check-in triggered"], { stdio: "ignore" });
 }

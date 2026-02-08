@@ -26,9 +26,27 @@ const PID_PATH = path.join(HOME, PID_FILE);
 const INIT_TOML = path.join(RHO_DIR, "init.toml");
 const HB_STATE_PATH = path.join(RHO_DIR, "rho-state.json");
 
+const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
+
+function tmuxArgs(args: string[]): string[] {
+  return ["-L", TMUX_SOCKET, ...args];
+}
+
 function tmuxSessionExists(): boolean {
+  // New dedicated socket
+  const r = spawnSync("tmux", tmuxArgs(["has-session", "-t", SESSION_NAME]), { stdio: "ignore" });
+  return r.status === 0;
+}
+
+function tmuxLegacySessionExists(): boolean {
   const r = spawnSync("tmux", ["has-session", "-t", SESSION_NAME], { stdio: "ignore" });
   return r.status === 0;
+}
+
+function getActiveTmuxArgs(): { baseArgs: string[]; legacy: boolean } | null {
+  if (tmuxSessionExists()) return { baseArgs: tmuxArgs([]), legacy: false };
+  if (tmuxLegacySessionExists()) return { baseArgs: [], legacy: true };
+  return null;
 }
 
 function readDaemonPid(): number | null {
@@ -62,7 +80,14 @@ function getVersion(): string | null {
 
 function capturePaneOutput(): string | null {
   try {
-    const r = spawnSync("tmux", ["capture-pane", "-t", SESSION_NAME, "-p"], { encoding: "utf-8" });
+    const active = getActiveTmuxArgs();
+    if (!active) return null;
+
+    const r = spawnSync(
+      "tmux",
+      [...active.baseArgs, "capture-pane", "-t", SESSION_NAME, "-p"],
+      { encoding: "utf-8" },
+    );
     if (r.status !== 0) return null;
     const out = r.stdout || "";
     const lines = out.split("\n").filter((l) => l.trim() !== "");
@@ -107,8 +132,10 @@ Options:
   const platform = detectPlatform();
   const daemonPid = readDaemonPid();
 
+  const active = getActiveTmuxArgs();
+
   const state: DaemonState = {
-    tmuxRunning: tmuxSessionExists(),
+    tmuxRunning: active !== null,
     daemonPid,
     daemonPidAlive: daemonPid !== null ? pidAlive(daemonPid) : false,
     platform,

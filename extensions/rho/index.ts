@@ -17,7 +17,7 @@ import { convertToLlm, serializeConversation } from "@mariozechner/pi-coding-age
 import { StringEnum, complete } from "@mariozechner/pi-ai";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { Text } from "@mariozechner/pi-tui";
+import { Text, visibleWidth, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -160,6 +160,37 @@ function extractJsonObject(text: string): string | null {
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
   const match = trimmed.match(/\{[\s\S]*\}/);
   return match ? match[0] : null;
+}
+
+// ─── Top bar (header) ───────────────────────────────────────────────────────
+
+function formatPathForHeader(cwd: string, maxWidth: number): string {
+  let out = cwd || "";
+  if (HOME && out.startsWith(HOME)) {
+    out = "~" + out.slice(HOME.length);
+    if (out === "") out = "~";
+  }
+
+  if (maxWidth <= 0) return "";
+  if (out.length <= maxWidth) return out;
+  if (maxWidth === 1) return "…";
+  return "…" + out.slice(-(maxWidth - 1));
+}
+
+function setRhoHeader(ctx: ExtensionContext): void {
+  if (!ctx.hasUI) return;
+
+  ctx.ui.setHeader((_tui, theme) => ({
+    invalidate() {},
+    render(width: number): string[] {
+      const left = theme.fg("accent", "rho");
+      const maxRight = Math.max(0, width - visibleWidth(left) - 1);
+      const rightPlain = formatPathForHeader(ctx.cwd, maxRight);
+      const right = theme.fg("muted", rightPlain);
+      const spaces = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
+      return [truncateToWidth(left + " ".repeat(spaces) + right, width)];
+    },
+  }));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1975,6 +2006,8 @@ export default function (pi: ExtensionAPI) {
   // ── Event Handlers ─────────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    if (!IS_SUBAGENT) setRhoHeader(ctx);
+
     // Brain: cache context for system prompt
     const brainContext = buildBrainContext(ctx.cwd);
     cachedBrainPrompt = brainContext.trim()
@@ -2057,6 +2090,7 @@ export default function (pi: ExtensionAPI) {
 
   if (!IS_SUBAGENT) {
     pi.on("session_switch", async (_event, ctx) => {
+      setRhoHeader(ctx);
       startHeartbeatLeadership(ctx);
       loadHbState();
       reconstructHbState(ctx);
@@ -2065,6 +2099,7 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.on("session_fork", async (_event, ctx) => {
+      setRhoHeader(ctx);
       startHeartbeatLeadership(ctx);
       loadHbState();
       reconstructHbState(ctx);

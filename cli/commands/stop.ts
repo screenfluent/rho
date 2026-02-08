@@ -21,7 +21,18 @@ import {
 const HOME = process.env.HOME || os.homedir();
 const PID_PATH = path.join(HOME, PID_FILE);
 
+const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
+
+function tmuxArgs(args: string[]): string[] {
+  return ["-L", TMUX_SOCKET, ...args];
+}
+
 function tmuxSessionExists(): boolean {
+  const r = spawnSync("tmux", tmuxArgs(["has-session", "-t", SESSION_NAME]), { stdio: "ignore" });
+  return r.status === 0;
+}
+
+function tmuxLegacySessionExists(): boolean {
   const r = spawnSync("tmux", ["has-session", "-t", SESSION_NAME], { stdio: "ignore" });
   return r.status === 0;
 }
@@ -50,8 +61,11 @@ Options:
   }
 
   const platform = detectPlatform();
+  const rhoSocketRunning = tmuxSessionExists();
+  const legacyRunning = tmuxLegacySessionExists();
+
   const state: DaemonState = {
-    tmuxRunning: tmuxSessionExists(),
+    tmuxRunning: rhoSocketRunning || legacyRunning,
     daemonPid: readDaemonPid(),
     daemonPidAlive: false,
     platform,
@@ -75,8 +89,9 @@ Options:
     }
   }
 
-  // Kill tmux session
+  // Kill tmux session (new socket + legacy socket)
   if (plan.tmuxRunning) {
+    spawnSync("tmux", tmuxArgs(["kill-session", "-t", plan.sessionName]), { stdio: "ignore" });
     spawnSync("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
   }
 

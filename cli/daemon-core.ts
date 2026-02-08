@@ -61,15 +61,20 @@ export interface NotificationArgs {
 export function buildNotificationArgs(
   tmuxBin: string,
   interval: string = "30m",
+  socketName: string = SESSION_NAME,
 ): NotificationArgs {
+  // Use a dedicated tmux socket so Rho sessions can use an opinionated tmux
+  // config without affecting the user's default tmux server.
+  const base = `${tmuxBin} -L ${socketName}`;
+
   return {
     title: "Rho Daemon",
     content: `Check-ins active (${interval})`,
     id: "rho-daemon",
     ongoing: true,
-    action: `${tmuxBin} attach -t ${SESSION_NAME}`,
+    action: `${base} attach -t ${SESSION_NAME}`,
     button1: "Check Now",
-    button1Action: `${tmuxBin} send-keys -t ${SESSION_NAME} '/rho now' Enter`,
+    button1Action: `${base} send-keys -t ${SESSION_NAME} '/rho now' Enter`,
   };
 }
 

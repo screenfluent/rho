@@ -30,7 +30,36 @@ const RHO_DIR = path.join(HOME, ".rho");
 const PID_PATH = path.join(HOME, PID_FILE);
 const INIT_TOML = path.join(RHO_DIR, "init.toml");
 
+const TMUX_SOCKET = (process.env.RHO_TMUX_SOCKET || "rho").trim() || "rho";
+const TMUX_CONF_OVERRIDE = (process.env.RHO_TMUX_CONF || "").trim();
+const TMUX_CONF_FALLBACK = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "configs",
+  "tmux-rho.conf",
+);
+
+function getTmuxConfPath(): string {
+  if (TMUX_CONF_OVERRIDE) return TMUX_CONF_OVERRIDE;
+  const userConf = path.join(RHO_DIR, "tmux.conf");
+  if (existsSync(userConf)) return userConf;
+  return TMUX_CONF_FALLBACK;
+}
+
+function tmuxBaseArgs(): string[] {
+  // Always use a dedicated socket so we don't interfere with the user's default tmux server.
+  return ["-L", TMUX_SOCKET, "-f", getTmuxConfPath()];
+}
+
 function tmuxSessionExists(): boolean {
+  // Rho socket server
+  const r = spawnSync("tmux", [...tmuxBaseArgs(), "has-session", "-t", SESSION_NAME], { stdio: "ignore" });
+  return r.status === 0;
+}
+
+function tmuxLegacySessionExists(): boolean {
+  // Back-compat: prior versions used the default tmux socket/config.
   const r = spawnSync("tmux", ["has-session", "-t", SESSION_NAME], { stdio: "ignore" });
   return r.status === 0;
 }
@@ -97,7 +126,7 @@ function showNotification(interval: string): void {
   const tmuxBin = getCommandPath("tmux") || "tmux";
 
   try {
-    const notif = buildNotificationArgs(tmuxBin, interval);
+    const notif = buildNotificationArgs(tmuxBin, interval, TMUX_SOCKET);
     const cliArgs = notificationToCliArgs(notif);
     spawnSync("termux-notification", cliArgs, { stdio: "ignore" });
   } catch {
@@ -121,7 +150,7 @@ function ensureTmuxSession(): void {
 
   const r = spawnSync(
     "tmux",
-    ["new-session", "-d", "-s", SESSION_NAME, "-c", HOME, "pi -c"],
+    [...tmuxBaseArgs(), "new-session", "-d", "-s", SESSION_NAME, "-c", HOME, "pi -c"],
     { stdio: "ignore" },
   );
   if (r.status !== 0) {
@@ -209,8 +238,11 @@ Options:
     try { unlinkSync(PID_PATH); } catch {}
   }
 
+  const rhoSocketRunning = tmuxSessionExists();
+  const legacyRunning = tmuxLegacySessionExists();
+
   const state: DaemonState = {
-    tmuxRunning: tmuxSessionExists(),
+    tmuxRunning: rhoSocketRunning || legacyRunning,
     daemonPid: readDaemonPid(),
     daemonPidAlive: false,
     platform,
@@ -219,10 +251,24 @@ Options:
   const plan = planStart(state, HOME);
 
   if (plan.tmuxAlreadyRunning) {
+    // Prefer the new dedicated socket if present.
+    if (rhoSocketRunning) {
+      if (foreground) {
+        spawnSync("tmux", [...tmuxBaseArgs(), "attach", "-t", plan.sessionName], { stdio: "inherit" });
+      } else {
+        console.log("Rho already running.");
+        console.log(`Attach with: tmux -L ${TMUX_SOCKET} attach -t ${plan.sessionName}`);
+      }
+      return;
+    }
+
+    // Legacy server (default socket) exists.
+    console.log("Rho is running on the legacy tmux socket (default config).");
+    console.log("To migrate to the rho tmux config, run: rho stop  (then)  rho start");
+
     if (foreground) {
       spawnSync("tmux", ["attach", "-t", plan.sessionName], { stdio: "inherit" });
     } else {
-      console.log("Rho already running.");
       console.log(`Attach with: tmux attach -t ${plan.sessionName}`);
     }
     return;
@@ -251,9 +297,9 @@ Options:
   console.log(`Rho running in tmux session: ${plan.sessionName}`);
 
   if (foreground) {
-    spawnSync("tmux", ["attach", "-t", plan.sessionName], { stdio: "inherit" });
+    spawnSync("tmux", [...tmuxBaseArgs(), "attach", "-t", plan.sessionName], { stdio: "inherit" });
   } else {
-    console.log(`Attach with: tmux attach -t ${plan.sessionName}`);
+    console.log(`Attach with: tmux -L ${TMUX_SOCKET} attach -t ${plan.sessionName}`);
   }
 }
 

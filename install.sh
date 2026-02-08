@@ -318,26 +318,27 @@ bootstrap_brain() {
   fi
 }
 
-# --- Install tmux config (Linux/macOS only) ---
+# --- Install Rho-scoped tmux config ---
 
 install_tmux_config() {
-  # Only install on desktop platforms (not Android -- Termux has its own config)
-  if [ "$PLATFORM" = "android" ]; then
-    return
-  fi
+  # Rho runs tmux on a dedicated socket with its own config file.
+  # We install the default config to ~/.rho/tmux.conf (never overwriting).
+  # This avoids touching the user's ~/.tmux.conf.
 
   local src="$REPO_DIR/configs/tmux-rho.conf"
-  local dest="$HOME/.tmux.conf"
+  local dest="$RHO_DIR/tmux.conf"
 
   if [ ! -f "$src" ]; then
     return
   fi
 
+  mkdir -p "$RHO_DIR"
+
   if [ ! -f "$dest" ]; then
     cp "$src" "$dest"
-    echo "✓ Installed tmux config -> ~/.tmux.conf (SSH-friendly, mobile-optimized)"
+    echo "✓ Installed rho tmux config -> ~/.rho/tmux.conf"
   else
-    echo "• ~/.tmux.conf exists (skipped -- see configs/tmux-rho.conf for Rho defaults)"
+    echo "• ~/.rho/tmux.conf exists (skipped)"
   fi
 }
 
