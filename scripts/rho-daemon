@@ -1,66 +1,14 @@
 #!/usr/bin/env bash
-# Rho Daemon - Keep pi running in background with check-ins
+# rho-daemon (legacy wrapper) — delegate to the Node.js CLI
 
-# Source rho config
+set -euo pipefail
+
 if [ -f "$HOME/.config/rho/config" ]; then
+  # shellcheck disable=SC1090
   . "$HOME/.config/rho/config"
 fi
+
 RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
-RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
+CLI="$RHO_DIR/cli/index.ts"
 
-SESSION_NAME="rho"
-PIDFILE="$HOME/.rho-daemon.pid"
-
-# Android: acquire wake lock to prevent doze mode
-if [ "$RHO_PLATFORM" = "android" ]; then
-    termux-wake-lock 2>/dev/null
-fi
-
-cleanup() {
-    if [ "$RHO_PLATFORM" = "android" ]; then
-        termux-wake-unlock 2>/dev/null
-    fi
-    rm -f "$PIDFILE"
-    exit 0
-}
-trap cleanup SIGTERM SIGINT
-
-# Store PID
-echo $$ > "$PIDFILE"
-
-# Check if tmux session exists
-if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    echo "Rho is already running. Attaching..."
-    tmux attach -t "$SESSION_NAME"
-else
-    echo "Starting rho daemon..."
-    # Create new detached tmux session running pi
-    # The rho extension will auto-load
-    tmux new-session -d -s "$SESSION_NAME" -c "$HOME" "pi -c"
-
-    # Android: persistent notification with actions
-    if [ "$RHO_PLATFORM" = "android" ] && command -v termux-notification >/dev/null 2>&1; then
-        TMUX_BIN="$(command -v tmux)"
-        termux-notification \
-            --title "Rho Daemon" \
-            --content "Check-ins active (30m)" \
-            --id rho-daemon \
-            --ongoing \
-            --action "$TMUX_BIN attach -t rho" \
-            --button1 "Check Now" \
-            --button1-action "$TMUX_BIN send-keys -t rho '/rho now' Enter"
-    fi
-
-    echo "Rho running in tmux session: $SESSION_NAME"
-    echo "Attach with: tmux attach -t $SESSION_NAME"
-fi
-
-# Keep script alive (holds wake lock on Android, monitors session everywhere)
-while true; do
-    # Check if tmux session still alive
-    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-        echo "Rho session died. Restarting..."
-        tmux new-session -d -s "$SESSION_NAME" -c "$HOME" "pi -c"
-    fi
-    sleep 30
-done
+exec node --experimental-strip-types "$CLI" start "$@"

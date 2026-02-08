@@ -157,7 +157,7 @@ Manual trigger for a rho check-in. Called when you want to force a check-in via 
 **Intent action:** `rho.tasker.check`
 
 **Task:**
-1. Run Shell → `~/.local/bin/rho-trigger`
+1. Run Shell → `~/.local/bin/rho trigger`
 2. (Optional) Flash "Rho check-in triggered"
 
 ### RhoDaemonBoot (Auto-start)
@@ -167,7 +167,7 @@ Starts the rho daemon on device boot.
 
 **Task:**
 1. Wait → 1 minute (let system settle)
-2. Run Shell → `~/.local/bin/rho-daemon`
+2. Run Shell → `~/.local/bin/rho start`
 
 ### RhoPeriodic (Scheduled Check-ins)
 Triggers a rho check-in every 30 minutes (or your configured interval).
@@ -175,7 +175,7 @@ Triggers a rho check-in every 30 minutes (or your configured interval).
 **Profile:** Time → Repeat every 30 minutes
 
 **Task:**
-1. Run Shell → `~/.local/bin/rho-trigger`
+1. Run Shell → `~/.local/bin/rho trigger`
 2. Flash → "Rho check-in triggered"
 
 **Note:** This is a backup trigger. The daemon has its own internal timer, but this ensures check-ins happen even if the daemon's timer drifts.
@@ -186,4 +186,4 @@ Triggers a rho check-in every 30 minutes (or your configured interval).
 - Grant all permissions AutoInput requests
 - Test each profile manually before using with the extension
 - Use "Continue Task After Error" and write error info to result file for debugging
-- For rho daemon: Install tmux (`pkg install tmux`) before running `rho-daemon`
+- For rho daemon: Install tmux (`pkg install tmux`) before running `rho start`

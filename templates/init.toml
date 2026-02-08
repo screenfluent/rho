@@ -1,0 +1,48 @@
+# Rho Configuration
+# Edit this file, then run `rho sync` to apply changes.
+# Docs: https://github.com/mikeyobrien/rho
+
+# ── Agent Identity ──────────────────────────────────────
+
+[agent]
+name = "rho"                          # Your agent's name
+
+# ── Modules ─────────────────────────────────────────────
+# Enable (true) or comment out / set false to disable.
+# Core modules are always on and cannot be disabled.
+
+[modules.core]
+heartbeat = true                      # Heartbeat daemon, check-ins, and memory consolidation
+memory = true                         # Memory browser and viewer
+
+[modules.knowledge]
+vault = true                          # Knowledge vault with full-text search and orphan cleanup
+
+[modules.tools]
+brave-search = true                   # Web search via Brave Search API
+x-search = true                       # X/Twitter search via xAI Grok
+email = true                          # Agent email via Rho Cloud (rhobot.dev)
+
+# Skills-only modules (no extensions, just SKILL.md files)
+[modules.skills]
+session-search = true                 # Search across pi session logs
+update-pi = true                      # Update pi coding agent to latest version
+rho-onboard = true                    # Install and configure Rho from scratch (agent SOP)
+
+[modules.ui]
+usage-bars = true                     # Token usage display bars
+moltbook = true                       # Moltbook viewer
+
+# ── Module Settings ─────────────────────────────────────
+# Configure individual modules below.
+# Settings only apply when the corresponding module is enabled.
+
+[settings.heartbeat]
+interval = "30m"                      # Check-in interval (e.g., "15m", "1h", "2h")
+# prompt = "~/.rho/heartbeat-prompt.txt"  # Custom heartbeat prompt
+
+[settings.email]
+# handle = ""                         # Your rhobot.dev email handle
+
+# [settings.brave-search]
+# api_key_env = "BRAVE_API_KEY"       # Environment variable for API key

@@ -1,31 +1,14 @@
 #!/usr/bin/env bash
-# Stop the rho daemon
+# rho-stop (legacy wrapper) — delegate to the Node.js CLI
 
-# Source rho config
+set -euo pipefail
+
 if [ -f "$HOME/.config/rho/config" ]; then
+  # shellcheck disable=SC1090
   . "$HOME/.config/rho/config"
 fi
+
 RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
-RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
+CLI="$RHO_DIR/cli/index.ts"
 
-SESSION_NAME="rho"
-PIDFILE="$HOME/.rho-daemon.pid"
-
-echo "Stopping rho daemon..."
-
-# Kill tmux session
-tmux kill-session -t "$SESSION_NAME" 2>/dev/null
-
-# Kill daemon script
-if [ -f "$PIDFILE" ]; then
-    kill $(cat "$PIDFILE") 2>/dev/null
-    rm -f "$PIDFILE"
-fi
-
-# Android: release wake lock and remove notification
-if [ "$RHO_PLATFORM" = "android" ]; then
-    termux-wake-unlock 2>/dev/null
-    termux-notification-remove rho-daemon 2>/dev/null || true
-fi
-
-echo "Rho daemon stopped"
+exec node --experimental-strip-types "$CLI" stop "$@"

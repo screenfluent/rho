@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rho Bootstrap -- Universal installer
 # Works on Android/Termux, macOS, and Linux.
-# Usage: curl -fsSL https://rhobot.dev/install | bash
+# Usage: curl -fsSL https://runrho.dev/install | bash
 set -e
 
 # Colors
@@ -161,9 +161,9 @@ show_done() {
   echo ""
   echo -e "${GREEN}rho is ready.${NC}"
   echo ""
-  echo "  rho              start and attach"
-  echo "  rho -d           start in background"
-  echo "  rho login        connect your LLM provider"
+  echo "  rho start --foreground   start and attach"
+  echo "  rho start                start in background"
+  echo "  rho login                connect your LLM provider"
   echo ""
   echo "  /rho status      check heartbeat (inside session)"
   echo "  /rho now         trigger check-in"

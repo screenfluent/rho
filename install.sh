@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Rho — Cross-platform install script
 # Detects OS, checks dependencies, symlinks core + platform files,
 # writes config, and bootstraps templates.
@@ -89,12 +89,25 @@ check_dependencies() {
     fi
   done
 
+  # pi is required for rho to run. Install it automatically if missing.
+  if ! command -v pi &>/dev/null; then
+    echo "Installing pi coding agent..."
+    npm install -g @mariozechner/pi-coding-agent
+  fi
+
   # On desktop, exit if anything was missing (we printed instructions above)
   if [ "$missing" -eq 1 ] && [ "$PLATFORM" != "android" ]; then
     echo ""
     echo "Install missing dependencies and re-run ./install.sh"
     exit 1
   fi
+}
+
+# --- Node dependencies (for local-path package installs) ---
+
+install_node_deps() {
+  echo "Installing Node dependencies..."
+  (cd "$REPO_DIR" && npm install)
 }
 
 # --- Cleanup ---
@@ -134,37 +147,13 @@ cleanup_old() {
 install_extensions() {
   mkdir -p "$PI_DIR/extensions"
 
-  # Core extensions
-  # pi discovery supports:
-  # - extensions/*.ts (single-file extensions)
-  # - extensions/*/index.ts (directory extensions)
-  # This repo uses directory extensions, plus a shared lib/ folder.
+  # IMPORTANT: core Rho extensions are loaded via pi package loading + filtering
+  # (settings.json) and MUST NOT be symlinked into ~/.pi/agent/extensions,
+  # otherwise module enable/disable in init.toml cannot work.
 
-  # Link shared library directory (must exist for relative imports like ../lib/mod.ts)
-  if [ -d "$REPO_DIR/extensions/lib" ]; then
-    ln -sf "$REPO_DIR/extensions/lib" "$PI_DIR/extensions/lib"
-  fi
-
-  # Link directory-style extensions (extensions/<name>/index.ts)
-  for d in "$REPO_DIR/extensions"/*/; do
-    [ -d "$d" ] || continue
-    local name
-    name="$(basename "$d")"
-    [ "$name" = "lib" ] && continue
-    if [ -f "${d}index.ts" ] || [ -f "${d}index.js" ]; then
-      ln -sf "$d" "$PI_DIR/extensions/$name"
-    fi
-  done
-
-  # Back-compat: link any single-file extensions sitting at extensions/*.ts
-  for f in "$REPO_DIR/extensions"/*.ts; do
-    [ -f "$f" ] || continue
-    ln -sf "$f" "$PI_DIR/extensions/$(basename "$f")"
-  done
-
-  echo "✓ Symlinked core extensions"
-
-  # Platform extensions
+  # Platform extensions (Termux/Tasker integration, etc) are still installed
+  # as local extensions, since pi has no native platform-conditional package
+  # resources.
   local plat_ext="$REPO_DIR/platforms/$PLATFORM/extensions"
   if [ -d "$plat_ext" ]; then
     for entry in "$plat_ext"/*; do
@@ -175,7 +164,7 @@ install_extensions() {
         ln -sf "$entry" "$PI_DIR/extensions/$(basename "$entry")"
       fi
     done
-    echo "✓ Symlinked $PLATFORM extensions"
+    echo "✓ Installed $PLATFORM extensions"
   fi
 }
 
@@ -184,15 +173,11 @@ install_extensions() {
 install_skills() {
   mkdir -p "$PI_DIR/skills"
 
-  # Core skills (only dirs containing SKILL.md)
-  for d in "$REPO_DIR/skills"/*/; do
-    [ -d "$d" ] || continue
-    [ -f "${d}SKILL.md" ] || continue
-    ln -sf "$d" "$PI_DIR/skills/$(basename "$d")"
-  done
-  echo "✓ Symlinked core skills"
+  # IMPORTANT: core Rho skills are loaded via pi package loading + filtering
+  # (settings.json) and MUST NOT be symlinked into ~/.pi/agent/skills,
+  # otherwise module enable/disable in init.toml cannot work.
 
-  # Platform skills (only dirs containing SKILL.md)
+  # Platform skills are still installed locally.
   local plat_skills="$REPO_DIR/platforms/$PLATFORM/skills"
   if [ -d "$plat_skills" ]; then
     for d in "$plat_skills"/*/; do
@@ -200,7 +185,7 @@ install_skills() {
       [ -f "${d}SKILL.md" ] || continue
       ln -sf "$d" "$PI_DIR/skills/$(basename "$d")"
     done
-    echo "✓ Symlinked $PLATFORM skills"
+    echo "✓ Installed $PLATFORM skills"
   fi
 }
 
@@ -356,6 +341,19 @@ install_tmux_config() {
   fi
 }
 
+# --- Bootstrap Doom-style config ---
+
+bootstrap_rho_config() {
+  echo ""
+  echo "Bootstrapping config (init.toml -> pi settings.json)..."
+
+  # Create ~/.rho/init.toml if missing.
+  node --experimental-strip-types "$REPO_DIR/cli/index.ts" init --name "rho" >/dev/null 2>&1 || true
+
+  # Sync using the local repo path as the package source.
+  RHO_SOURCE="$REPO_DIR" node --experimental-strip-types "$REPO_DIR/cli/index.ts" sync
+}
+
 # --- Platform Setup ---
 
 run_platform_setup() {
@@ -374,11 +372,13 @@ echo ""
 
 detect_platform
 check_dependencies
+install_node_deps
 cleanup_old
 install_extensions
 install_skills
 install_scripts
 write_config
+bootstrap_rho_config
 bootstrap_templates
 bootstrap_brain
 install_tmux_config
@@ -388,6 +388,6 @@ echo ""
 echo "Done! Platform: $PLATFORM"
 echo ""
 echo "Next steps:"
-echo "  1. Run /reload in pi to load extensions"
-echo "  2. Start the daemon: rho-daemon"
-echo "  3. Customize: ~/SOUL.md, ~/HEARTBEAT.md, ~/RHO.md"
+echo "  1. Check health: rho doctor"
+echo "  2. Start: rho start --foreground"
+echo "  3. Configure modules: edit ~/.rho/init.toml, then run: rho sync"

@@ -27,7 +27,7 @@ sudo apt update && sudo apt install -y nodejs npm tmux git
 git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
 cd ~/projects/rho && ./install.sh
 rho login
-rho -d   # start in background
+rho start   # start in background
 ```
 
 The free tier never expires. Your Rho instance runs indefinitely.
@@ -91,7 +91,7 @@ crontab -e
 Add this line:
 
 ```
-@reboot sleep 10 && $HOME/.local/bin/rho -d
+@reboot sleep 10 && $HOME/.local/bin/rho start
 ```
 
 This starts Rho in the background 10 seconds after boot.

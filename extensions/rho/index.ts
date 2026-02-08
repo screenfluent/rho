@@ -1228,6 +1228,12 @@ const HEARTBEAT_WINDOW_NAME = "heartbeat";
 const MAX_WINDOW_NAME = 50;
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Heartbeat leader election (multi-process safety)
+const HEARTBEAT_LOCK_PATH = path.join(RHO_DIR, "heartbeat.lock.json");
+const HEARTBEAT_TRIGGER_PATH = path.join(RHO_DIR, "heartbeat.trigger");
+const HEARTBEAT_LOCK_REFRESH_MS = 15 * 1000;
+const HEARTBEAT_LOCK_STALE_MS = 60 * 1000;
+
 const RHO_PROMPT = `This is a rho check-in. Review the following:
 
 1. Read RHO.md and HEARTBEAT.md from the workspace if they exist - follow any checklists or scheduled tasks there
@@ -1265,6 +1271,188 @@ function formatInterval(ms: number): string {
 function sanitizeWindowName(value: string): string {
   const cleaned = value.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, MAX_WINDOW_NAME);
   return cleaned || "subagent";
+}
+
+// ─── Heartbeat: Multi-process leadership (first PID wins) ────────────────────
+
+interface HeartbeatLockFile {
+  pid: number;
+  nonce: string;
+  acquiredAt: number;
+  refreshedAt: number;
+  hostname: string;
+}
+
+function isPidRunning(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    // EPERM means the PID exists, we just can't signal it.
+    if (code === "EPERM") return true;
+    return false;
+  }
+}
+
+function readHeartbeatLock(): HeartbeatLockFile | null {
+  try {
+    if (!fs.existsSync(HEARTBEAT_LOCK_PATH)) return null;
+    const raw = fs.readFileSync(HEARTBEAT_LOCK_PATH, "utf-8");
+    const parsed = JSON.parse(raw) as Partial<HeartbeatLockFile>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.pid !== "number") return null;
+    if (typeof parsed.nonce !== "string") return null;
+    if (typeof parsed.acquiredAt !== "number") return null;
+    if (typeof parsed.refreshedAt !== "number") return null;
+    if (typeof parsed.hostname !== "string") return null;
+    return parsed as HeartbeatLockFile;
+  } catch {
+    return null;
+  }
+}
+
+function isLockStale(lock: HeartbeatLockFile, now: number): boolean {
+  if (!lock) return true;
+  if (!isPidRunning(lock.pid)) return true;
+  if (!Number.isFinite(lock.refreshedAt)) return true;
+  return (now - lock.refreshedAt) > HEARTBEAT_LOCK_STALE_MS;
+}
+
+function fileMtimeMs(filePath: string): number | null {
+  try {
+    return fs.statSync(filePath).mtimeMs || null;
+  } catch {
+    return null;
+  }
+}
+
+function atomicWriteTextFile(filePath: string, content: string): boolean {
+  let tmpPath: string | null = null;
+  try {
+    ensureRhoDir();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    tmpPath = `${filePath}.tmp-${process.pid}-${nanoid(4)}`;
+    fs.writeFileSync(tmpPath, content, { encoding: "utf-8", mode: 0o600 });
+    fs.renameSync(tmpPath, filePath);
+    tmpPath = null;
+    return true;
+  } catch {
+    try {
+      if (tmpPath) fs.unlinkSync(tmpPath);
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+}
+
+function createExclusiveTextFile(filePath: string, content: string): { ok: boolean; errorCode?: string } {
+  let tmpPath: string | null = null;
+  try {
+    ensureRhoDir();
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    tmpPath = `${filePath}.tmp-create-${process.pid}-${nanoid(4)}`;
+    fs.writeFileSync(tmpPath, content, { encoding: "utf-8", mode: 0o600 });
+    fs.linkSync(tmpPath, filePath); // atomic, fails with EEXIST if lock already present
+    fs.unlinkSync(tmpPath);
+    tmpPath = null;
+    return { ok: true };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    try {
+      if (tmpPath) fs.unlinkSync(tmpPath);
+    } catch {
+      // ignore
+    }
+    return { ok: false, errorCode: code };
+  }
+}
+
+function readHeartbeatLockMeta(): { lock: HeartbeatLockFile | null; mtimeMs: number | null } {
+  return { lock: readHeartbeatLock(), mtimeMs: fileMtimeMs(HEARTBEAT_LOCK_PATH) };
+}
+
+function writeHeartbeatLock(lock: HeartbeatLockFile): boolean {
+  return atomicWriteTextFile(HEARTBEAT_LOCK_PATH, JSON.stringify(lock, null, 2));
+}
+
+function tryAcquireHeartbeatLock(nonce: string, now: number): { ok: boolean; ownerPid: number | null } {
+  const lock: HeartbeatLockFile = {
+    pid: process.pid,
+    nonce,
+    acquiredAt: now,
+    refreshedAt: now,
+    hostname: os.hostname(),
+  };
+  const payload = JSON.stringify(lock, null, 2);
+
+  // Create with full content, atomically, without an intermediate empty file.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const created = createExclusiveTextFile(HEARTBEAT_LOCK_PATH, payload);
+    if (created.ok) return { ok: true, ownerPid: process.pid };
+    if (created.errorCode && created.errorCode !== "EEXIST") return { ok: false, ownerPid: null };
+
+    const meta = readHeartbeatLockMeta();
+    if (meta.lock) {
+      if (isLockStale(meta.lock, now)) {
+        try { fs.unlinkSync(HEARTBEAT_LOCK_PATH); } catch { /* ignore */ }
+        continue;
+      }
+      return { ok: false, ownerPid: meta.lock.pid };
+    }
+
+    // Unparseable lock file: treat as "locked" unless it is stale by mtime.
+    if (meta.mtimeMs && (now - meta.mtimeMs) > HEARTBEAT_LOCK_STALE_MS) {
+      try { fs.unlinkSync(HEARTBEAT_LOCK_PATH); } catch { /* ignore */ }
+      continue;
+    }
+
+    return { ok: false, ownerPid: null };
+  }
+
+  const after = readHeartbeatLock();
+  return { ok: false, ownerPid: after?.pid ?? null };
+}
+
+function refreshHeartbeatLock(nonce: string, now: number): boolean {
+  const lock = readHeartbeatLock();
+  if (!lock) return false;
+  if (lock.pid !== process.pid) return false;
+  if (lock.nonce !== nonce) return false;
+  lock.refreshedAt = now;
+  return writeHeartbeatLock(lock);
+}
+
+function releaseHeartbeatLock(nonce: string): void {
+  try {
+    const lock = readHeartbeatLock();
+    if (!lock) return;
+    if (lock.pid !== process.pid) return;
+    if (lock.nonce !== nonce) return;
+    fs.unlinkSync(HEARTBEAT_LOCK_PATH);
+  } catch {
+    // ignore
+  }
+}
+
+function requestHeartbeatTrigger(now: number): void {
+  // Atomic write to avoid readers seeing partial content.
+  atomicWriteTextFile(HEARTBEAT_TRIGGER_PATH, String(now));
+}
+
+function consumeHeartbeatTrigger(lastSeenMtimeMs: number): { triggered: boolean; nextSeen: number } {
+  try {
+    if (!fs.existsSync(HEARTBEAT_TRIGGER_PATH)) return { triggered: false, nextSeen: lastSeenMtimeMs };
+    const st = fs.statSync(HEARTBEAT_TRIGGER_PATH);
+    const mtime = st.mtimeMs || Date.now();
+    if (mtime <= lastSeenMtimeMs) return { triggered: false, nextSeen: lastSeenMtimeMs };
+    try { fs.unlinkSync(HEARTBEAT_TRIGGER_PATH); } catch { /* ignore */ }
+    return { triggered: true, nextSeen: mtime };
+  } catch {
+    return { triggered: false, nextSeen: lastSeenMtimeMs };
+  }
 }
 
 // ─── Heartbeat: Tmux Integration ──────────────────────────────────────────────
@@ -1401,12 +1589,126 @@ export default function (pi: ExtensionAPI) {
   let hbStatusTimer: NodeJS.Timeout | null = null;
   let hbCachedModel: ResolvedModel | null = null;
 
+  // Heartbeat leadership: only the first live PID schedules the heartbeat.
+  let hbIsLeader = false;
+  const hbLockNonce = nanoid(8);
+  let hbLockOwnerPid: number | null = null;
+  let hbLeadershipTimer: NodeJS.Timeout | null = null;
+  let hbLeadershipCtx: ExtensionContext | null = null;
+  let hbTriggerSeenMtimeMs = 0;
+  let hbLastSettingsFingerprint: string | null = null;
+  let hbExitHandlersInstalled = false;
+
+  const heartbeatSettingsFingerprint = (): string => {
+    return JSON.stringify({ enabled: hbState.enabled, intervalMs: hbState.intervalMs, heartbeatModel: hbState.heartbeatModel });
+  };
+
+  const stopHeartbeatTimers = () => {
+    if (hbTimer) { clearTimeout(hbTimer); hbTimer = null; }
+  };
+
+  const verifyHeartbeatLeadership = (ctx: ExtensionContext): boolean => {
+    if (!hbIsLeader) return false;
+    const lock = readHeartbeatLock();
+    if (!lock || lock.pid !== process.pid || lock.nonce !== hbLockNonce) {
+      hbIsLeader = false;
+      hbLockOwnerPid = lock?.pid ?? null;
+      stopHeartbeatTimers();
+      updateStatusLine(ctx);
+      return false;
+    }
+    return true;
+  };
+
+  const installHeartbeatExitHandlers = () => {
+    if (hbExitHandlersInstalled) return;
+    hbExitHandlersInstalled = true;
+
+    const cleanup = () => {
+      stopHeartbeatTimers();
+      releaseHeartbeatLock(hbLockNonce);
+    };
+
+    process.once("exit", cleanup);
+    // Don't terminate the pi process here. Just release the lock so another process can take over.
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+  };
+
+  const startHeartbeatLeadership = (ctx: ExtensionContext) => {
+    if (!ctx.hasUI) return;
+    hbLeadershipCtx = ctx;
+    installHeartbeatExitHandlers();
+
+    if (hbLeadershipTimer) return;
+
+    // Attempt leadership immediately.
+    const initial = tryAcquireHeartbeatLock(hbLockNonce, Date.now());
+    hbLockOwnerPid = initial.ownerPid;
+    if (initial.ok) {
+      hbIsLeader = true;
+      hbLastSettingsFingerprint = null;
+    }
+
+    hbLeadershipTimer = setInterval(() => {
+      const liveCtx = hbLeadershipCtx;
+      if (!liveCtx || !liveCtx.hasUI) return;
+      const now = Date.now();
+
+      if (hbIsLeader) {
+        const stillLeader = refreshHeartbeatLock(hbLockNonce, now);
+        if (!stillLeader) {
+          hbIsLeader = false;
+          hbLockOwnerPid = readHeartbeatLock()?.pid ?? null;
+          stopHeartbeatTimers();
+          updateStatusLine(liveCtx);
+          return;
+        }
+
+        // Pull settings changes written by other processes.
+        const before = hbLastSettingsFingerprint ?? heartbeatSettingsFingerprint();
+        loadHbState();
+        const after = heartbeatSettingsFingerprint();
+        hbLastSettingsFingerprint = after;
+        if (before !== after || (!hbTimer && hbState.enabled && hbState.intervalMs > 0)) {
+          scheduleNext(liveCtx);
+        }
+
+        // Cross-process trigger requests.
+        const trig = consumeHeartbeatTrigger(hbTriggerSeenMtimeMs);
+        hbTriggerSeenMtimeMs = trig.nextSeen;
+        if (trig.triggered) triggerCheck(liveCtx);
+        return;
+      }
+
+      // Follower: opportunistically take leadership if lock is missing/stale.
+      const lock = readHeartbeatLock();
+      hbLockOwnerPid = lock?.pid ?? null;
+      if (!lock || isLockStale(lock, now)) {
+        const res = tryAcquireHeartbeatLock(hbLockNonce, now);
+        hbLockOwnerPid = res.ownerPid;
+        if (res.ok) {
+          hbIsLeader = true;
+          hbLastSettingsFingerprint = null;
+          // Schedule immediately on takeover.
+          loadHbState();
+          scheduleNext(liveCtx);
+        }
+      }
+    }, HEARTBEAT_LOCK_REFRESH_MS);
+  };
+
   const updateStatusLine = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
     const theme = ctx.ui.theme;
 
     if (!hbState.enabled || hbState.intervalMs === 0) {
       ctx.ui.setStatus("rho-heartbeat", theme.fg("dim", "ρ off"));
+      return;
+    }
+
+    if (!hbIsLeader) {
+      ctx.ui.setStatus("rho-heartbeat", theme.fg("dim", "ρ follow"));
       return;
     }
 
@@ -1454,18 +1756,60 @@ export default function (pi: ExtensionAPI) {
     if (hbState.intervalMs === 0) hbState.enabled = false;
   };
 
-  const saveHbState = () => {
+  const saveHbState = (mode: "full" | "settings" = "full") => {
     try {
       fs.mkdirSync(RHO_DIR, { recursive: true });
-      fs.writeFileSync(STATE_PATH, JSON.stringify({
-        enabled: hbState.enabled,
-        intervalMs: hbState.intervalMs,
-        lastCheckAt: hbState.lastCheckAt,
-        nextCheckAt: hbState.nextCheckAt,
-        checkCount: hbState.checkCount,
-        heartbeatModel: hbState.heartbeatModel,
-      }, null, 2));
-    } catch { /* ignore */ }
+
+      if (mode === "settings") {
+        // Preserve leader-owned scheduling fields when we're not the leader.
+        // If we can't parse the existing state, do NOT write (avoid stomping).
+        let base: Partial<RhoState> | null = {};
+        try {
+          if (fs.existsSync(STATE_PATH)) {
+            const raw = fs.readFileSync(STATE_PATH, "utf-8");
+            base = JSON.parse(raw) as Partial<RhoState>;
+          }
+        } catch {
+          base = null;
+        }
+        if (!base) return;
+
+        atomicWriteTextFile(
+          STATE_PATH,
+          JSON.stringify(
+            {
+              enabled: hbState.enabled,
+              intervalMs: hbState.intervalMs,
+              lastCheckAt: (base.lastCheckAt ?? null) as number | null,
+              nextCheckAt: (base.nextCheckAt ?? null) as number | null,
+              checkCount: (typeof base.checkCount === "number" ? base.checkCount : 0) as number,
+              heartbeatModel: hbState.heartbeatModel,
+            },
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+
+      atomicWriteTextFile(
+        STATE_PATH,
+        JSON.stringify(
+          {
+            enabled: hbState.enabled,
+            intervalMs: hbState.intervalMs,
+            lastCheckAt: hbState.lastCheckAt,
+            nextCheckAt: hbState.nextCheckAt,
+            checkCount: hbState.checkCount,
+            heartbeatModel: hbState.heartbeatModel,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch {
+      /* ignore */
+    }
   };
 
   const reconstructHbState = (ctx: ExtensionContext) => {
@@ -1544,11 +1888,28 @@ export default function (pi: ExtensionAPI) {
     return "";
   };
 
-  const scheduleNext = (ctx: ExtensionContext) => {
+  const scheduleNext = (ctx: ExtensionContext, options?: { reloadFromDisk?: boolean }) => {
+    if (options?.reloadFromDisk) {
+      try { loadHbState(); } catch { /* ignore */ }
+    }
+
     if (hbTimer) { clearTimeout(hbTimer); hbTimer = null; }
+
+    // If we think we're the leader, confirm we still own the lock.
+    if (hbIsLeader) verifyHeartbeatLeadership(ctx);
+
+    // Disabled: persist settings, clear nextCheckAt locally.
     if (!hbState.enabled || hbState.intervalMs === 0) {
       hbState.nextCheckAt = null;
-      saveHbState();
+      saveHbState(hbIsLeader ? "full" : "settings");
+      updateStatusLine(ctx);
+      return;
+    }
+
+    // Follower: never schedule timers (and never overwrite leader-owned fields).
+    if (!hbIsLeader) {
+      hbState.nextCheckAt = null;
+      saveHbState("settings");
       updateStatusLine(ctx);
       return;
     }
@@ -1559,13 +1920,17 @@ export default function (pi: ExtensionAPI) {
     if (nextAt <= now) nextAt = now + 1000;
     hbState.nextCheckAt = nextAt;
 
-    hbTimer = setTimeout(() => { triggerCheck(ctx); }, Math.max(0, nextAt - now));
-    saveHbState();
+    hbTimer = setTimeout(() => {
+      if (!verifyHeartbeatLeadership(ctx)) return;
+      triggerCheck(ctx);
+    }, Math.max(0, nextAt - now));
+    saveHbState("full");
     updateStatusLine(ctx);
   };
 
   const triggerCheck = (ctx: ExtensionContext) => {
     if (!ctx.hasUI) return;
+    if (!verifyHeartbeatLeadership(ctx)) return;
 
     hbState.lastCheckAt = Date.now();
     hbState.checkCount++;
@@ -1619,8 +1984,9 @@ export default function (pi: ExtensionAPI) {
     // Vault: rebuild graph
     rebuildVaultGraph();
 
-    // Heartbeat: restore state and schedule
+    // Heartbeat: restore state, acquire leadership, and schedule
     if (!IS_SUBAGENT) {
+      startHeartbeatLeadership(ctx);
       loadHbState();
       reconstructHbState(ctx);
       scheduleNext(ctx);
@@ -1691,6 +2057,7 @@ export default function (pi: ExtensionAPI) {
 
   if (!IS_SUBAGENT) {
     pi.on("session_switch", async (_event, ctx) => {
+      startHeartbeatLeadership(ctx);
       loadHbState();
       reconstructHbState(ctx);
       scheduleNext(ctx);
@@ -1698,6 +2065,7 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.on("session_fork", async (_event, ctx) => {
+      startHeartbeatLeadership(ctx);
       loadHbState();
       reconstructHbState(ctx);
       scheduleNext(ctx);
@@ -1707,6 +2075,10 @@ export default function (pi: ExtensionAPI) {
     pi.on("session_shutdown", async () => {
       if (hbTimer) { clearTimeout(hbTimer); hbTimer = null; }
       if (hbStatusTimer) { clearInterval(hbStatusTimer); hbStatusTimer = null; }
+      if (hbLeadershipTimer) { clearInterval(hbLeadershipTimer); hbLeadershipTimer = null; }
+      hbIsLeader = false;
+      hbLeadershipCtx = null;
+      releaseHeartbeatLock(hbLockNonce);
     });
   }
 
@@ -2027,6 +2399,11 @@ export default function (pi: ExtensionAPI) {
             if (!ctx.hasUI) {
               return { content: [{ type: "text", text: "Error: Cannot trigger rho in non-interactive mode" }], details: { action: "trigger", wasTriggered: false } as RhoDetails };
             }
+            if (!hbIsLeader) {
+              requestHeartbeatTrigger(Date.now());
+              const leaderText = hbLockOwnerPid ? ` (leader pid ${hbLockOwnerPid})` : "";
+              return { content: [{ type: "text", text: `Requested rho check-in${leaderText}` }], details: { action: "trigger", wasTriggered: false } as RhoDetails };
+            }
             triggerCheck(ctx);
             return { content: [{ type: "text", text: "Rho check-in triggered" }], details: { action: "trigger", wasTriggered: true, lastCheckAt: hbState.lastCheckAt, checkCount: hbState.checkCount } as RhoDetails };
 
@@ -2067,6 +2444,12 @@ export default function (pi: ExtensionAPI) {
 
             let text = `Rho status:\n`;
             text += `- Enabled: ${hbState.enabled}\n`;
+            const leaderLine = hbIsLeader
+              ? `leader (pid ${process.pid})`
+              : hbLockOwnerPid
+                ? `follower (leader pid ${hbLockOwnerPid})`
+                : "follower";
+            text += `- Leadership: ${leaderLine}\n`;
             text += `- Interval: ${formatInterval(hbState.intervalMs)}\n`;
             text += `- Heartbeat model: ${hbModelText}\n`;
             text += `- Total check-ins this session: ${hbState.checkCount}\n`;
@@ -2092,7 +2475,7 @@ export default function (pi: ExtensionAPI) {
             if (modelArg === "auto") {
               hbState.heartbeatModel = null;
               hbCachedModel = null;
-              saveHbState();
+              saveHbState(hbIsLeader ? "full" : "settings");
               return { content: [{ type: "text", text: "Heartbeat model set to auto (uses session model)" }], details: { action: "model", heartbeatModel: null, heartbeatModelSource: "auto" } as RhoDetails };
             }
             const parts = modelArg.split("/");
@@ -2104,7 +2487,7 @@ export default function (pi: ExtensionAPI) {
               return { content: [{ type: "text", text: `Error: Model '${modelArg}' not found. Use --list-models to see available models.` }], details: { action: "model" } as RhoDetails };
             }
             hbState.heartbeatModel = modelArg;
-            saveHbState();
+            saveHbState(hbIsLeader ? "full" : "settings");
             return { content: [{ type: "text", text: `Heartbeat model pinned to ${modelArg} ($${model.cost.output}/M output)` }], details: { action: "model", heartbeatModel: modelArg, heartbeatModelSource: "pinned", heartbeatModelCost: model.cost.output } as RhoDetails };
           }
         }
@@ -2325,7 +2708,8 @@ export default function (pi: ExtensionAPI) {
               `interval: ${formatInterval(hbState.intervalMs)}, ` +
               `model: ${modelInfo}, ` +
               `auto-memory: ${am.enabled ? "on" : "off"} (${am.source}), ` +
-              `count: ${hbState.checkCount}`,
+              `leader: ${hbIsLeader ? "yes" : hbLockOwnerPid ? "no (pid " + hbLockOwnerPid + ")" : "no"}, ` +
+              `count: ${hbState.checkCount}`, 
               "info"
             );
             break;
@@ -2342,6 +2726,12 @@ export default function (pi: ExtensionAPI) {
             break;
           case "now":
             if (!ctx.hasUI) { ctx.ui.notify("Rho requires interactive mode", "error"); return; }
+            if (!hbIsLeader) {
+              requestHeartbeatTrigger(Date.now());
+              const leaderText = hbLockOwnerPid ? ` (leader pid ${hbLockOwnerPid})` : "";
+              ctx.ui.notify(`Requested rho check-in${leaderText}`, "info");
+              break;
+            }
             triggerCheck(ctx);
             ctx.ui.notify("Rho check-in triggered", "success");
             break;
@@ -2395,7 +2785,7 @@ export default function (pi: ExtensionAPI) {
             if (arg === "auto") {
               hbState.heartbeatModel = null;
               hbCachedModel = null;
-              saveHbState();
+              saveHbState(hbIsLeader ? "full" : "settings");
               ctx.ui.notify("Heartbeat model set to auto (uses session model)", "success");
               return;
             }
@@ -2404,7 +2794,7 @@ export default function (pi: ExtensionAPI) {
             const model = ctx.modelRegistry.find(parts[0], parts[1]);
             if (!model) { ctx.ui.notify(`Model '${arg}' not found`, "error"); return; }
             hbState.heartbeatModel = arg;
-            saveHbState();
+            saveHbState(hbIsLeader ? "full" : "settings");
             ctx.ui.notify(`Heartbeat model pinned to ${arg} ($${model.cost.output}/M output)`, "success");
             break;
           }

@@ -1,0 +1,96 @@
+/**
+ * rho stop — Stop the heartbeat daemon.
+ *
+ * Stops the background monitor process (if present) and kills the tmux session.
+ * On Android, also releases wake lock and removes notification (defense in depth).
+ */
+
+import * as os from "node:os";
+import * as path from "node:path";
+import { readFileSync, unlinkSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
+import { detectPlatform } from "../init-core.ts";
+import {
+  SESSION_NAME,
+  PID_FILE,
+  planStop,
+  type DaemonState,
+} from "../daemon-core.ts";
+
+const HOME = process.env.HOME || os.homedir();
+const PID_PATH = path.join(HOME, PID_FILE);
+
+function tmuxSessionExists(): boolean {
+  const r = spawnSync("tmux", ["has-session", "-t", SESSION_NAME], { stdio: "ignore" });
+  return r.status === 0;
+}
+
+function readDaemonPid(): number | null {
+  try {
+    const content = readFileSync(PID_PATH, "utf-8").trim();
+    const pid = parseInt(content, 10);
+    return Number.isFinite(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function run(args: string[]): Promise<void> {
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`rho stop
+
+Stop the Rho heartbeat daemon.
+
+Stops the background monitor process and kills the tmux session.
+
+Options:
+  -h, --help   Show this help`);
+    return;
+  }
+
+  const platform = detectPlatform();
+  const state: DaemonState = {
+    tmuxRunning: tmuxSessionExists(),
+    daemonPid: readDaemonPid(),
+    daemonPidAlive: false,
+    platform,
+  };
+
+  const plan = planStop(state);
+
+  if (!plan.tmuxRunning && plan.daemonPid === null) {
+    console.log("Rho is not running.");
+    return;
+  }
+
+  console.log("Stopping rho daemon...");
+
+  // Stop monitor first so it doesn't restart tmux.
+  if (plan.daemonPid !== null) {
+    try {
+      process.kill(plan.daemonPid, "SIGTERM");
+    } catch {
+      // stale pid
+    }
+  }
+
+  // Kill tmux session
+  if (plan.tmuxRunning) {
+    spawnSync("tmux", ["kill-session", "-t", plan.sessionName], { stdio: "ignore" });
+  }
+
+  // Clean up PID file
+  try { unlinkSync(PID_PATH); } catch {}
+
+  // Android cleanup (defense in depth)
+  if (plan.needsWakeUnlock) {
+    spawnSync("termux-wake-unlock", [], { stdio: "ignore" });
+  }
+
+  if (plan.needsNotificationRemove) {
+    spawnSync("termux-notification-remove", ["rho-daemon"], { stdio: "ignore" });
+  }
+
+  console.log("Rho daemon stopped.");
+}

@@ -3,21 +3,39 @@
   "version": "0.1.0",
   "type": "module",
   "description": "AI agent with persistent memory, heartbeat check-ins, and a knowledge vault",
-  "keywords": ["pi-package"],
-  "homepage": "https://rhobot.dev",
+  "bin": {
+    "rho": "cli/index.ts"
+  },
+  "keywords": [
+    "pi-package"
+  ],
+  "homepage": "https://runrho.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/mikeyobrien/rho.git"
   },
   "license": "MIT",
   "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./extensions"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-ai": "*",
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "dependencies": {
+    "smol-toml": "^1.6.0"
   }
 }

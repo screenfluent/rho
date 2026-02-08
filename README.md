@@ -26,7 +26,7 @@ Prerequisites: Node.js (18+), tmux, git. The installer checks and tells you what
 Install [Termux](https://f-droid.org/packages/com.termux/) and [Termux:API](https://f-droid.org/packages/com.termux.api/) from F-Droid, then:
 
 ```bash
-curl -fsSL https://rhobot.dev/install | bash
+curl -fsSL https://runrho.dev/install | bash
 ```
 
 Or step by step:
@@ -46,10 +46,10 @@ Rho runs on a server you SSH into. Use [Termius](https://apps.apple.com/app/term
 # On your server (VPS, home machine, or free Oracle Cloud instance):
 git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
 cd ~/projects/rho && ./install.sh
-rho login && rho -d
+rho login && rho start
 
 # On your iPhone: connect via SSH, then:
-rho
+rho start --foreground
 ```
 
 Full guide: [docs/iphone-setup.md](docs/iphone-setup.md), including Termius config, Tailscale for home servers, and free VPS options.
@@ -57,10 +57,11 @@ Full guide: [docs/iphone-setup.md](docs/iphone-setup.md), including Termius conf
 ## Run
 
 ```bash
-rho           # Start and attach
-rho -d        # Start in background
-rho status    # Is it running?
-rho stop      # Stop
+rho start --foreground   # Start and attach
+rho start                # Start in background
+rho status               # Is it running?
+rho trigger              # Force a check-in
+rho stop                 # Stop
 ```
 
 Inside a session:
@@ -206,43 +207,59 @@ adb shell appops set net.dinglisch.android.taskerm PROJECT_MEDIA allow
 
 ```
 rho/
-├── extensions/              # Core pi extensions
-│   ├── brave-search/         # index.ts
-│   ├── email/                # index.ts
-│   ├── memory-viewer/        # index.ts
-│   ├── moltbook-viewer/      # index.ts
-│   ├── rho/                  # index.ts
-│   ├── usage-bars/           # index.ts
-│   ├── vault-search/         # index.ts
+├── cli/                     # Node.js CLI (rho init/sync/doctor/upgrade/...)
+│   ├── index.ts
+│   ├── config.ts
+│   ├── registry.ts
+│   ├── sync-core.ts
+│   ├── doctor-core.ts
+│   ├── daemon-core.ts
+│   └── commands/
+├── templates/               # Default ~/.rho/*.toml templates
+│   ├── init.toml
+│   └── packages.toml
+├── extensions/              # Core pi extensions (loaded via pi package entry)
+│   ├── brave-search/
+│   ├── email/
+│   ├── memory-viewer/
+│   ├── moltbook-viewer/
+│   ├── rho/
+│   ├── usage-bars/
+│   ├── vault-search/
 │   └── lib/                  # shared modules (NOT an extension)
-│       ├── mod.ts            # barrel exports (do not name this index.ts)
-│       ├── vault-lib.ts
-│       └── vault-search-lib.ts
-├── skills/                  # Core skills (all platforms)
-│   └── update-pi/
-├── platforms/
+│       └── mod.ts            # barrel exports (do not name this index.ts)
+├── skills/                  # Core skills (loaded via pi package entry)
+│   ├── memory-clean/
+│   ├── vault-clean/
+│   ├── rho-cloud-email/
+│   ├── rho-cloud-onboard/
+│   ├── session-search/
+│   ├── update-pi/
+│   └── rho-onboard/
+├── platforms/               # Platform-only local skills/extensions installed by install.sh
 │   ├── android/
 │   │   ├── extensions/      # tasker.ts
 │   │   ├── skills/          # notification, clipboard, sms, stt, tts, ...
-│   │   ├── scripts/bin/     # stt, stt-send
-│   │   └── bootstrap.sh     # One-command Termux installer
+│   │   └── scripts/bin/     # stt, stt-send
 │   ├── macos/
 │   │   ├── skills/          # notification, clipboard, open-url, tts
-│   │   └── setup.sh         # Dependency checker
+│   │   └── setup.sh
 │   └── linux/
 │       ├── skills/          # notification, clipboard, open-url, tts
-│       └── setup.sh         # Dependency checker
-├── scripts/                 # Daemon management
-│   ├── rho                  # Start/attach
-│   ├── rho-daemon           # Background daemon
-│   ├── rho-status           # Status check
-│   ├── rho-stop             # Stop daemon
-│   └── rho-trigger          # Trigger check-in
+│       └── setup.sh
+├── scripts/                 # Legacy wrappers (delegate to the Node CLI)
+│   ├── rho
+│   ├── rho-daemon
+│   ├── rho-status
+│   ├── rho-stop
+│   ├── rho-trigger
+│   └── rho-login
 ├── configs/                 # Configuration files
 │   └── tmux-rho.conf        # SSH-friendly tmux config (installed on macOS/Linux)
 ├── brain/                   # Default brain files
 ├── tasker/                  # Importable Tasker profiles (Android)
-├── install.sh               # Cross-platform installer
+├── bootstrap.sh             # Universal installer (curl | bash)
+├── install.sh               # Cross-platform installer (platform extras + rho init/sync)
 ├── AGENTS.md.template       # Agent operating principles
 ├── RHO.md.template          # Check-in checklist
 ├── HEARTBEAT.md.template    # Scheduled tasks
@@ -259,6 +276,16 @@ RHO_PLATFORM=android|macos|linux  # Detected platform
 ```
 
 Scripts source this file at startup. You can override values manually.
+
+Doom-style config lives in:
+- `~/.rho/init.toml` (modules + settings)
+- `~/.rho/packages.toml` (third-party pi packages)
+
+After editing either file, run:
+
+```bash
+rho sync
+```
 
 ## Adding a platform
 

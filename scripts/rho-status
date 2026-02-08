@@ -1,23 +1,14 @@
 #!/usr/bin/env bash
-# Check rho daemon status
+# rho-status (legacy wrapper) — delegate to the Node.js CLI
 
-# Source rho config
+set -euo pipefail
+
 if [ -f "$HOME/.config/rho/config" ]; then
+  # shellcheck disable=SC1090
   . "$HOME/.config/rho/config"
 fi
+
 RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
-RHO_PLATFORM="${RHO_PLATFORM:-unknown}"
+CLI="$RHO_DIR/cli/index.ts"
 
-SESSION_NAME="rho"
-
-if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-    echo "Rho not running"
-    exit 1
-fi
-
-# Get last lines of pi session to see status
-echo "=== Rho Status ==="
-echo "Platform: $RHO_PLATFORM"
-echo "RHO_DIR:  $RHO_DIR"
-echo ""
-tmux capture-pane -t "$SESSION_NAME" -p | tail -20
+exec node --experimental-strip-types "$CLI" status "$@"
