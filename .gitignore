@@ -27,4 +27,7 @@ skills/*/
 !skills/rho-cloud-onboard/
 !skills/rho-cloud-email/
 !skills/rho-onboard/
+!skills/memory-clean/
+!skills/session-search/
+!skills/vault-clean/
 .worktrees/
