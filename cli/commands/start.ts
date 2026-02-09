@@ -284,6 +284,17 @@ Options:
 
   const plan = planStart(state, HOME);
 
+  // If we're already inside the rho tmux session, don't nest-attach.
+  if (foreground && process.env.TMUX) {
+    try {
+      const currentSession = spawnSync("tmux", ["display-message", "-p", "#S"], { encoding: "utf-8" });
+      if (currentSession.stdout?.trim() === SESSION_NAME) {
+        console.log("Already in rho session. Use `/rho status` for heartbeat info.");
+        return;
+      }
+    } catch {}
+  }
+
   if (plan.tmuxAlreadyRunning) {
     // Prefer the new dedicated socket if present.
     if (rhoSocketRunning) {
