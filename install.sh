@@ -64,7 +64,12 @@ check_dependencies() {
           ;;
         linux)
           local pkg_hint=""
-          if command -v apt &>/dev/null; then
+          if [ -f /etc/NIXOS ] || command -v nixos-rebuild &>/dev/null; then
+            case "$cmd" in
+              node|npm) pkg_hint="Add nodejs to environment.systemPackages or use nix-shell -p nodejs" ;;
+              *)        pkg_hint="Add $cmd to environment.systemPackages or use nix-shell -p $cmd" ;;
+            esac
+          elif command -v apt &>/dev/null; then
             case "$cmd" in
               node|npm) pkg_hint="sudo apt install nodejs npm" ;;
               *)        pkg_hint="sudo apt install $cmd" ;;
