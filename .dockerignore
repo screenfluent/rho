@@ -1,0 +1,8 @@
+.git
+node_modules
+site
+.ralph
+.worktrees
+docs/*.gif
+docs/*.cast
+docs/*.png
