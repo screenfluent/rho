@@ -96,6 +96,8 @@ for (const [name, entry] of Object.entries(REGISTRY)) {
   registryByCategory[entry.category].push(name);
 }
 
+const DEFAULT_FALSE = new Set(["email"]);
+
 for (const [category, modules] of Object.entries(registryByCategory)) {
   const configCategory = initConfig.modules[category as keyof typeof initConfig.modules];
   assert(configCategory !== undefined, `modules.${category} section exists`);
@@ -104,10 +106,11 @@ for (const [category, modules] of Object.entries(registryByCategory)) {
       configCategory !== undefined && mod in configCategory,
       `modules.${category}.${mod} is present`
     );
+    const expected = DEFAULT_FALSE.has(mod) ? false : true;
     assertEq(
       configCategory?.[mod],
-      true,
-      `modules.${category}.${mod} defaults to true`
+      expected,
+      `modules.${category}.${mod} defaults to ${expected}`
     );
   }
 }
@@ -140,8 +143,9 @@ assert(commentLines >= 15, `has >= 15 comment lines (found ${commentLines})`);
 
 // -- Core modules have descriptions as comments --
 for (const [name, entry] of Object.entries(REGISTRY)) {
-  // Each module line should have the description as an inline comment
-  const pattern = new RegExp(`${name}\\s*=\\s*true\\s+#.*${entry.description.slice(0, 20)}`);
+  // Each module line should have the description as an inline comment.
+  // Some modules may default to false.
+  const pattern = new RegExp(`${name}\\s*=\\s*(true|false)\\s+#.*${entry.description.slice(0, 20)}`);
   assert(pattern.test(initContent), `${name} has description comment`);
 }
 

@@ -284,7 +284,7 @@ Doom-style config lives in:
 After editing either file, run:
 
 ```bash
-rho sync
+rho sync --yes
 ```
 
 ## Adding a platform

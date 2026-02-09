@@ -128,7 +128,7 @@ console.log("\n=== generateInitToml ===\n");
   assert(validation.valid, "generated config passes validation");
   assertEq(validation.errors.length, 0, "no validation errors");
 
-  // All modules present and enabled
+  // All modules present (some may default off)
   const allModules = [
     ...Object.entries(config.modules.core),
     ...Object.entries(config.modules.knowledge),
@@ -137,8 +137,11 @@ console.log("\n=== generateInitToml ===\n");
     ...Object.entries(config.modules.skills),
   ];
   assert(allModules.length >= 10, `has at least 10 modules (got ${allModules.length})`);
+
+  const DEFAULT_FALSE = new Set(["email"]);
   for (const [name, enabled] of allModules) {
-    assert(enabled === true, `module ${name} is enabled by default`);
+    const expected = DEFAULT_FALSE.has(name) ? false : true;
+    assert(enabled === expected, `module ${name} defaults to ${expected}`);
   }
 
   // Has comments (not just bare TOML)

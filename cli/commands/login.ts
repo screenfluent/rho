@@ -30,8 +30,7 @@ Options:
   --logout <provider>    Remove credentials for a provider
   -h, --help             Show this help
 
-Also checks for Rho Cloud credentials at:
-  ~/.config/rho-cloud/credentials.json`);
+`);
     return;
   }
 

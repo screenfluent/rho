@@ -1,5 +1,5 @@
 # Rho Configuration
-# Edit this file, then run `rho sync` to apply changes.
+# Edit this file, then run `rho sync --yes` to apply changes.
 # Docs: https://github.com/mikeyobrien/rho
 
 # ── Agent Identity ──────────────────────────────────────
@@ -21,7 +21,7 @@ vault = true                          # Knowledge vault with full-text search an
 [modules.tools]
 brave-search = true                   # Web search via Brave Search API
 x-search = true                       # X/Twitter search via xAI Grok
-email = true                          # Agent email via Rho Cloud (rhobot.dev)
+email = false                         # Agent email via Rho Cloud (rhobot.dev)
 
 # Skills-only modules (no extensions, just SKILL.md files)
 [modules.skills]

@@ -32,7 +32,7 @@ const COMMANDS: Record<string, CommandDef> = {
   stop:    { description: "Stop the heartbeat daemon",                  load: () => import("./commands/stop.ts") },
   status:  { description: "Show daemon and module status",              load: () => import("./commands/status.ts") },
   trigger: { description: "Force an immediate heartbeat check-in",      load: () => import("./commands/trigger.ts") },
-  login:   { description: "Authenticate with pi and Rho Cloud",         load: () => import("./commands/login.ts") },
+  login:   { description: "Authenticate with pi providers",            load: () => import("./commands/login.ts") },
 };
 
 function printHelp(): void {
