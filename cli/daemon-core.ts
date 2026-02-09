@@ -180,6 +180,13 @@ export function formatStatus(info: StatusInfo): string {
 
   lines.push(hbLine);
 
+  if (!info.state.tmuxRunning) {
+    if (!info.config) {
+      lines.push("  → Run `rho init` first (no config found)");
+    }
+    lines.push("  → Run `rho start` to begin");
+  }
+
   // Module summary
   if (info.config) {
     const counts = countModules(info.config);
