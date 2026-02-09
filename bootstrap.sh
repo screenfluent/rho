@@ -16,7 +16,7 @@ ok()    { echo -e "${GREEN}ok${NC} $1"; }
 warn()  { echo -e "${YELLOW}!!${NC} $1"; }
 fail()  { echo -e "${RED}error${NC} $1"; exit 1; }
 
-RHO_DIR="${RHO_DIR:-$HOME/projects/rho}"
+RHO_DIR="${RHO_DIR:-$HOME/.rho/project}"
 REPO_URL="https://github.com/mikeyobrien/rho.git"
 
 # ── Detect Platform ───────────────────────────────────────
@@ -161,7 +161,7 @@ show_done() {
   echo ""
   echo -e "${GREEN}rho is ready.${NC}"
   echo ""
-  echo "  rho start --foreground   start and attach"
+  echo "  rho                      start and attach"
   echo "  rho start                start in background"
   echo "  rho login                connect your LLM provider"
   echo ""

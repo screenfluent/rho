@@ -1,6 +1,8 @@
 # Tasker Setup for Rho
 
-This guide sets up Tasker to receive commands from Termux and perform UI automation.
+> **See also:** [Tasker Profiles Reference](tasker-profiles.md) for a complete reference of every intent action, extras, and result format (including Rho daemon profiles).
+
+This guide walks through setting up Tasker to receive commands from Termux and perform UI automation.
 
 ## Requirements
 

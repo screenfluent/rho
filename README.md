@@ -15,11 +15,11 @@ Built on [pi coding agent](https://github.com/badlogic/pi-mono).
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-cd ~/projects/rho && ./install.sh
+git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+cd ~/.rho/project && ./install.sh
 ```
 
-Prerequisites: Node.js (18+), tmux, git. The installer checks and tells you what's missing.
+Prerequisites: Node.js (18+), tmux, git. The installer checks and tells you what's missing. NixOS is detected and supported.
 
 ### Android (Termux)
 
@@ -34,8 +34,8 @@ Or step by step:
 ```bash
 pkg install nodejs-lts tmux git
 npm install -g @mariozechner/pi-coding-agent
-git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-cd ~/projects/rho && ./install.sh
+git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+cd ~/.rho/project && ./install.sh
 ```
 
 ### iPhone / iPad (via SSH)
@@ -44,12 +44,12 @@ Rho runs on a server you SSH into. Use [Termius](https://apps.apple.com/app/term
 
 ```bash
 # On your server (VPS, home machine, or free Oracle Cloud instance):
-git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-cd ~/projects/rho && ./install.sh
+git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+cd ~/.rho/project && ./install.sh
 rho login && rho start
 
 # On your iPhone: connect via SSH, then:
-rho start --foreground
+rho
 ```
 
 Full guide: [docs/iphone-setup.md](docs/iphone-setup.md), including Termius config, Tailscale for home servers, and free VPS options.
@@ -57,11 +57,18 @@ Full guide: [docs/iphone-setup.md](docs/iphone-setup.md), including Termius conf
 ## Run
 
 ```bash
-rho start --foreground   # Start and attach
+rho                      # Start and attach
+rho init                 # Initialize Rho config in ~/.rho/
+rho sync                 # Sync config to pi settings.json
+rho doctor               # Check system health and config validity
+rho login                # Authenticate with pi providers
 rho start                # Start in background
-rho status               # Is it running?
-rho trigger              # Force a check-in
 rho stop                 # Stop
+rho status               # Show daemon and module status
+rho trigger              # Force an immediate heartbeat check-in
+rho config               # Show current configuration
+rho logs                 # Show recent heartbeat output
+rho upgrade              # Update Rho and sync new modules
 ```
 
 Inside a session:
@@ -71,6 +78,9 @@ Inside a session:
 /rho now              Trigger check-in immediately
 /rho interval 30m     Set check-in interval
 /rho enable/disable   Toggle heartbeat
+/subagents            Check spawned subagent status
+/vault inbox          View captured items
+/brain                Interact with memory
 ```
 
 ## What it does
@@ -112,6 +122,8 @@ Or use the `/email` command once registered:
 | `dialog` | ✓ | | | Interactive input dialogs |
 | `tasker-xml` | ✓ | | | Create Tasker automations |
 | `rho-cloud-onboard` | ✓ | ✓ | ✓ | Register an agent email address |
+| `rho-cloud-email` | ✓ | ✓ | ✓ | Manage agent email address |
+| `soul-update` | ✓ | ✓ | ✓ | Mine sessions to evolve SOUL.md |
 | `update-pi` | ✓ | ✓ | ✓ | Update pi to latest version |
 
 ### Extensions
@@ -186,6 +198,8 @@ Lives at `~/.rho/brain/`:
 - `memory.jsonl` -- Learnings and preferences (grows over time)
 - `context.jsonl` -- Project-specific context
 - `memory/YYYY-MM-DD.md` -- Daily memory log
+
+Unused learnings are automatically archived after 90 days of decay.
 
 Use the `memory` tool or `/brain` command to interact with it.
 

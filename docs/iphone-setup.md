@@ -16,8 +16,8 @@ iPhone (Termius) --SSH--> Server (Rho in tmux)
 SSH into your server from a computer (or do this from your phone):
 
 ```bash
-git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-cd ~/projects/rho && ./install.sh
+git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+cd ~/.rho/project && ./install.sh
 rho login
 ```
 

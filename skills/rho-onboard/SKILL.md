@@ -88,8 +88,8 @@ rho --version
 
 ```bash
 mkdir -p ~/projects
-[ -d ~/projects/rho/.git ] || git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-npm install -g ~/projects/rho
+[ -d ~/.rho/project/.git ] || git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+npm install -g ~/.rho/project
 rho --version
 ```
 
@@ -130,7 +130,7 @@ rho doctor
 - You MUST ask the user before starting background processes (because it changes system state).
 
 ```bash
-rho start --foreground
+rho
 ```
 
 ### 9. Optional: tmux walkthrough

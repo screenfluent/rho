@@ -24,8 +24,8 @@ ssh ubuntu@<your-ip>
 sudo apt update && sudo apt install -y nodejs npm tmux git
 
 # Install Rho
-git clone https://github.com/mikeyobrien/rho.git ~/projects/rho
-cd ~/projects/rho && ./install.sh
+git clone https://github.com/mikeyobrien/rho.git ~/.rho/project
+cd ~/.rho/project && ./install.sh
 rho login
 rho start   # start in background
 ```

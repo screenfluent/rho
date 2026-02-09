@@ -91,7 +91,7 @@ function makeEmptyPackages(): PackagesConfig {
   return { packages: [] };
 }
 
-const RHO_ROOT = "/data/data/com.termux/files/home/projects/rho";
+const RHO_ROOT = "/data/data/com.termux/files/home/.rho/project";
 
 // ================================================================
 // buildRhoPackageEntry

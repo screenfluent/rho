@@ -1,6 +1,10 @@
 # Tasker Profiles Setup
 
+> **See also:** [Tasker Setup](tasker-setup.md) for step-by-step installation with a reusable result-writer task, architecture diagram, testing commands, and troubleshooting.
+
 The `tasker.ts` extension communicates with Tasker via broadcast intents. You need to create Tasker profiles that listen for these intents and perform the corresponding actions.
+
+This document is a **reference** for every intent action, its extras, and expected result format. For a guided walkthrough of creating the tasks and profiles in Tasker, see [Tasker Setup](tasker-setup.md).
 
 ## Required Profiles
 

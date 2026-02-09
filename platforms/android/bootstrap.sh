@@ -57,7 +57,7 @@ fi
 
 # ── Clone rho ──────────────────────────────────────────────
 
-RHO_DIR="$HOME/projects/rho"
+RHO_DIR="$HOME/.rho/project"
 if [ -d "$RHO_DIR/.git" ]; then
   ok "rho repo exists at $RHO_DIR"
   info "Pulling latest..."
@@ -84,7 +84,7 @@ echo -e "${GREEN}║${NC}       Rho is ready to go!        ${GREEN}║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════╝${NC}"
 echo ""
 echo "  Start rho:"
-echo -e "    ${CYAN}rho start --foreground${NC}   # Launch and attach"
+echo -e "    ${CYAN}rho${NC}                      # Launch and attach"
 echo -e "    ${CYAN}rho start${NC}                # Start in background"
 echo ""
 echo "  Inside pi:"
