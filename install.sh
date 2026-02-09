@@ -277,7 +277,6 @@ bootstrap_templates() {
   local -A templates=(
     ["RHO.md.template"]="$HOME/RHO.md"
     ["HEARTBEAT.md.template"]="$HOME/HEARTBEAT.md"
-    ["SOUL.md.template"]="$HOME/SOUL.md"
   )
 
   for tmpl in "${!templates[@]}"; do
@@ -291,6 +290,33 @@ bootstrap_templates() {
       echo "• $(basename "$target") exists (skipped)"
     fi
   done
+}
+
+# --- Link ~/SOUL.md to ~/.rho/SOUL.md ---
+
+link_soul() {
+  local src="$RHO_DIR/SOUL.md"
+  local dest="$HOME/SOUL.md"
+
+  if [ ! -f "$src" ]; then
+    # init should have created it, but be defensive.
+    node --experimental-strip-types "$REPO_DIR/cli/index.ts" init --name "rho" >/dev/null 2>&1 || true
+  fi
+
+  if [ -f "$src" ]; then
+    if [ ! -e "$dest" ]; then
+      ln -sf "$src" "$dest"
+      echo "✓ Linked ~/SOUL.md -> ~/.rho/SOUL.md"
+    else
+      # Don't overwrite a user file.
+      if [ -L "$dest" ]; then
+        # Refresh link target (idempotent)
+        ln -sf "$src" "$dest"
+      else
+        echo "• ~/SOUL.md exists (skipped linking to ~/.rho/SOUL.md)"
+      fi
+    fi
+  fi
 }
 
 # --- Bootstrap Brain ---
@@ -372,6 +398,7 @@ install_skills
 install_cli
 bootstrap_rho_config
 bootstrap_templates
+link_soul
 bootstrap_brain
 install_tmux_config
 run_platform_setup

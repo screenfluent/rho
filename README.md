@@ -176,6 +176,9 @@ Time-based triggers.
 
 Your agent's voice and identity. Who it is, what it cares about, how it talks.
 
+- Canonical: `~/.rho/SOUL.md`
+- Convenience link: `~/SOUL.md` (installed as a symlink when missing)
+
 ### Brain
 
 Lives at `~/.rho/brain/`:

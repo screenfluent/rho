@@ -173,12 +173,12 @@ show_done() {
     android)
       echo "  optional:"
       echo "    install Tasker for UI automation"
-      echo "    create ~/SOUL.md for personality"
+      echo "    edit ~/SOUL.md for personality"
       echo "    edit ~/RHO.md for custom tasks"
       ;;
     macos|linux)
       echo "  optional:"
-      echo "    create ~/SOUL.md for personality"
+      echo "    edit ~/SOUL.md for personality"
       echo "    edit ~/RHO.md for custom tasks"
       ;;
   esac
