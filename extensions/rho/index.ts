@@ -2061,6 +2061,7 @@ export default function (pi: ExtensionAPI) {
     try { tasksSection = buildHeartbeatSection(); } catch { /* ignore */ }
 
     if (!rhoMd && !heartbeatMd && !tasksSection) {
+      if (ctx.hasUI) ctx.ui.notify("ρ: skipped (nothing to do)", "info");
       scheduleNext(ctx);
       return;
     }
