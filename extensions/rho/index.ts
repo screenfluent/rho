@@ -2331,10 +2331,10 @@ export default function (pi: ExtensionAPI) {
       name: "tasks",
       label: "Tasks",
       description:
-        "Lightweight task queue. Actions: add (create task), list (show tasks), done (complete task), remove (delete task), clear (remove all done tasks). " +
+        "Lightweight task queue. Actions: add (create task), list (show tasks), done (complete task), remove (delete task), update (edit description/priority/due/tags), clear (remove all done tasks). " +
         "Tasks persist across sessions and are surfaced during heartbeat check-ins.",
       parameters: Type.Object({
-        action: StringEnum(["add", "list", "done", "remove", "clear"] as const),
+        action: StringEnum(["add", "list", "done", "remove", "update", "clear"] as const),
         description: Type.Optional(Type.String({ description: "Task description (for add action)" })),
         id: Type.Optional(Type.String({ description: "Task ID or prefix (for done/remove actions)" })),
         priority: Type.Optional(Type.String({ description: "Priority: urgent, high, normal, low (default: normal)" })),
@@ -2361,12 +2361,38 @@ export default function (pi: ExtensionAPI) {
             const result = removeTask(params.id || "");
             return { content: [{ type: "text", text: result.message }], details: { action: "remove", ok: result.ok, task: result.task } };
           }
+          case "update": {
+            if (!params.id?.trim()) return { content: [{ type: "text", text: "Error: task ID is required" }], details: { action: "update", ok: false } };
+            const tasks = loadTasks();
+            const task = findTaskById(tasks, params.id.trim());
+            if (!task) return { content: [{ type: "text", text: `Error: task '${params.id}' not found` }], details: { action: "update", ok: false } };
+
+            let changed = false;
+            if (params.description?.trim()) { task.description = params.description.trim(); changed = true; }
+            if (params.priority && ["urgent", "high", "normal", "low"].includes(params.priority)) { task.priority = params.priority as TaskPriority; changed = true; }
+            if (params.due !== undefined) {
+              if (params.due && !/^\d{4}-\d{2}-\d{2}$/.test(params.due)) {
+                return { content: [{ type: "text", text: `Error: invalid due date '${params.due}'` }], details: { action: "update", ok: false } };
+              }
+              task.due = params.due || null;
+              changed = true;
+            }
+            if (params.tags !== undefined) {
+              task.tags = params.tags ? params.tags.split(",").map(t => t.trim().toLowerCase()).filter(Boolean) : [];
+              changed = true;
+            }
+
+            if (!changed) return { content: [{ type: "text", text: "Nothing to update. Provide description, priority, due, or tags." }], details: { action: "update", ok: false } };
+
+            saveTasks(tasks);
+            return { content: [{ type: "text", text: `Updated: [${task.id}] ${task.description}` }], details: { action: "update", ok: true, task } };
+          }
           case "clear": {
             const result = clearDone();
             return { content: [{ type: "text", text: result.message }], details: { action: "clear", ok: result.ok, count: result.count } };
           }
           default:
-            return { content: [{ type: "text", text: "Error: Unknown action. Use: add, list, done, remove, clear" }], details: { error: true } };
+            return { content: [{ type: "text", text: "Error: Unknown action. Use: add, list, done, remove, update, clear" }], details: { error: true } };
         }
       },
 
@@ -2777,7 +2803,7 @@ export default function (pi: ExtensionAPI) {
 
   if (!IS_SUBAGENT) {
     pi.registerCommand("tasks", {
-      description: "Task queue: /tasks (list), /tasks add <desc>, /tasks done <id>, /tasks clear, /tasks all",
+      description: "Task queue: /tasks (list), /tasks add <desc>, /tasks done <id>, /tasks update <id> <desc>, /tasks clear, /tasks all",
       handler: async (args, ctx) => {
         const parts = args.trim().split(/\s+/);
         const subcmd = parts[0] || "";
@@ -2814,13 +2840,25 @@ export default function (pi: ExtensionAPI) {
             ctx.ui.notify(result.message, result.ok ? "success" : "error");
             break;
           }
+          case "update": {
+            const updateId = parts[1];
+            const newDesc = parts.slice(2).join(" ");
+            if (!updateId) { ctx.ui.notify("Usage: /tasks update <id> [new description]", "warning"); return; }
+            const tasks = loadTasks();
+            const task = findTaskById(tasks, updateId.trim());
+            if (!task) { ctx.ui.notify(`Task '${updateId}' not found`, "error"); return; }
+            if (newDesc.trim()) task.description = newDesc.trim();
+            saveTasks(tasks);
+            ctx.ui.notify(`Updated: [${task.id}] ${task.description}`, "success");
+            break;
+          }
           case "clear": {
             const result = clearDone();
             ctx.ui.notify(result.message, result.ok ? "success" : "error");
             break;
           }
           default:
-            ctx.ui.notify("Usage: /tasks [add <desc> | done <id> | remove <id> | clear | all]", "warning");
+            ctx.ui.notify("Usage: /tasks [add <desc> | done <id> | remove <id> | update <id> <desc> | clear | all]", "warning");
         }
       },
     });
