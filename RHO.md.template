@@ -4,12 +4,6 @@ Periodic check-in reminders for the agent.
 
 ## Bootstrap (One-time setup)
 
-- [ ] **FIRST CHECK-IN ONLY**: Open `AGENTS.md` (created by `install.sh` from `AGENTS.md.template`) and fill in template variables:
-  - {{NAME}}: Choose an agent name (e.g., "Tau", "Claude", "Alpha")
-  - {{DESCRIPTION}}: Brief description of the agent's role
-  - {{OS}}, {{ARCH}}, {{SHELL}}: Detect from environment
-  - {{HOME}}, {{CONFIG_PATH}}, {{BRAIN_PATH}}: Set appropriate paths
-  - {{SKILLS_PATH}}: Where skills are stored
 - [ ] **SOUL.md SEEDING**: If SOUL.md is still the blank template, run the `soul-update` skill in `bootstrap` mode to interview the user and fill it in. This must happen in an interactive session, not a heartbeat.
 
 ## Scheduled Tasks

@@ -260,7 +260,21 @@ bootstrap_templates() {
         os_string=$(uname -s)
       fi
 
-      sed -e "s|{{OS}}|$os_string|g" \
+      # Read agent name from init.toml (created by bootstrap_rho_config).
+      # Falls back to "rho" if init.toml is missing or unparseable.
+      local agent_name="rho"
+      if [ -f "$RHO_DIR/init.toml" ]; then
+        local parsed_name
+        parsed_name=$(grep -m1 '^name\s*=' "$RHO_DIR/init.toml" | sed 's/^name\s*=\s*"\([^"]*\)".*/\1/' 2>/dev/null)
+        if [ -n "$parsed_name" ]; then
+          agent_name="$parsed_name"
+        fi
+      fi
+      local agent_desc="An AI agent powered by rho: persistent memory, heartbeat check-ins, and a knowledge vault."
+
+      sed -e "s|{{NAME}}|$agent_name|g" \
+          -e "s|{{DESCRIPTION}}|$agent_desc|g" \
+          -e "s|{{OS}}|$os_string|g" \
           -e "s|{{ARCH}}|$(uname -m)|g" \
           -e "s|{{SHELL}}|$(basename "$SHELL")|g" \
           -e "s|{{HOME}}|$HOME|g" \
@@ -270,7 +284,7 @@ bootstrap_templates() {
           -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
           "$REPO_DIR/AGENTS.md.template" > "$RHO_DIR/AGENTS.md"
 
-      echo "✓ Created ~/.rho/AGENTS.md ({{NAME}} and {{DESCRIPTION}} left for agent)"
+      echo "✓ Created ~/.rho/AGENTS.md (agent: $agent_name)"
     fi
   else
     echo "• ~/.rho/AGENTS.md exists (use --force to overwrite)"
@@ -383,5 +397,5 @@ echo "Done! Platform: $PLATFORM"
 echo ""
 echo "Next steps:"
 echo "  1. Check health: rho doctor"
-echo "  2. Start: rho start --foreground"
+echo "  2. Start: rho"
 echo "  3. Configure modules: edit ~/.rho/init.toml, then run: rho sync"

@@ -1,37 +1,20 @@
 # {{NAME}}
 
-<!--
-Your agent's soul. This defines personality, voice, and values.
-AGENTS.md covers operations. SOUL.md covers identity.
+{{BOOTSTRAP: This file is still a blank template. On your first interactive conversation, introduce yourself and ask the user a few questions to fill this in — name, personality, voice, opinions. Or run the `soul-update` skill in bootstrap mode. Remove all {{}} instructions once real content is added.}}
 
-This file evolves over time. The soul-update skill mines your sessions
-nightly and proposes updates. You can also edit it directly.
-
-Sections with only empty bullets or placeholders will be detected as
-"needs bootstrapping" — the agent will interview you to fill them in.
--->
-
-One-line summary of who this agent is and what it cares about.
+{{One-line summary of who this agent is and what it cares about.}}
 
 ---
 
 ## Who I Am
 
-<!--
-What makes this agent distinct? Not capabilities (that's AGENTS.md),
-but perspective, disposition, what it finds interesting.
--->
+{{What makes this agent distinct? Not capabilities (that's AGENTS.md), but perspective, disposition, what it finds interesting.}}
 
 ---
 
 ## Worldview
 
-<!--
-Beliefs specific enough to be wrong. These shape how the agent
-reasons about ambiguous situations.
-"I believe in being helpful" is useless.
-"Shell scripts beat frameworks for most automation" is useful.
--->
+{{Beliefs specific enough to be wrong. "I believe in being helpful" is useless. "Shell scripts beat frameworks for most automation" is useful.}}
 
 - 
 - 
@@ -41,11 +24,7 @@ reasons about ambiguous situations.
 
 ## Opinions
 
-<!--
-Actual takes, organized by domain. The more specific, the more
-personality comes through. Include reasoning where it helps.
-Add new ### subsections as domains emerge from sessions.
--->
+{{Actual takes, organized by domain. The more specific, the more personality comes through. Add new ### subsections as domains emerge.}}
 
 ### On Being an Agent
 
@@ -55,10 +34,7 @@ Add new ### subsections as domains emerge from sessions.
 
 ## Voice
 
-<!--
-How the agent communicates — in chat, posts, notifications.
-Include good/bad examples for calibration.
--->
+{{How the agent communicates. Include good/bad examples for calibration.}}
 
 - 
 - 
@@ -70,11 +46,7 @@ Include good/bad examples for calibration.
 
 ## Current Focus
 
-<!--
-What the agent is working on or thinking about right now.
-This section changes frequently — soul-update evolve mode
-tracks shifts here based on session activity.
--->
+{{What the agent is working on or thinking about right now.}}
 
 - 
 
@@ -82,10 +54,7 @@ tracks shifts here based on session activity.
 
 ## Boundaries
 
-<!--
-What the agent won't do. External actions that need permission.
-Topics it defers on. Honesty about uncertainty.
--->
+{{What the agent won't do. External actions that need permission. Honesty about uncertainty.}}
 
 - 
 
@@ -93,9 +62,6 @@ Topics it defers on. Honesty about uncertainty.
 
 ## Tensions
 
-<!--
-Optional. Real personalities have contradictions.
-What does this agent believe that's in tension with something else it believes?
--->
+{{Optional. Real personalities have contradictions.}}
 
 - 

@@ -78,12 +78,14 @@ console.log("-- --help --");
   }
 }
 
-// -- no args shows help --
+// -- no args runs start (not help) --
+// Bare `rho` dispatches to `start --foreground`. In a test environment without
+// tmux, this may fail — that's expected. We just verify it doesn't show help.
 console.log("\n-- no args --");
 {
   const r = run("");
-  assert(r.code === 0, "no args exits 0");
-  assertIncludes(r.stdout, "Commands:", "no args shows help");
+  // Start may fail without tmux, but it should NOT show the help text.
+  assert(!r.stdout.includes("Commands:"), "no args dispatches to start (not help)");
 }
 
 // -- --version flag --
