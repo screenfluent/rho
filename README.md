@@ -259,8 +259,7 @@ rho/
 │   └── tmux-rho.conf        # SSH-friendly tmux config (used by rho's tmux socket)
 ├── brain/                   # Default brain files
 ├── tasker/                  # Importable Tasker profiles (Android)
-├── bootstrap.sh             # Universal installer (curl | bash, installs via npm)
-├── install.sh               # Developer install (for local repo checkouts)
+├── install.sh               # Universal installer (auto-detects user vs dev mode)
 ├── AGENTS.md.template       # Agent operating principles
 ├── RHO.md.template          # Check-in checklist
 ├── HEARTBEAT.md.template    # Scheduled tasks
