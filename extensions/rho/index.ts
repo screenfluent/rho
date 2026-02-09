@@ -48,6 +48,26 @@ const CONTEXT_FILE = path.join(BRAIN_DIR, "context.jsonl");
 const ARCHIVE_FILE = path.join(BRAIN_DIR, "archive.jsonl");
 const DAILY_MEMORY_DIR = path.join(BRAIN_DIR, "memory");
 
+// ── Memory count cache (for footer status) ──
+let cachedMemoryCount: number | null = null;
+let memoryCacheMs = 0;
+const MEMORY_CACHE_TTL = 30_000;
+
+function getMemoryCount(): number {
+  const now = Date.now();
+  if (cachedMemoryCount !== null && now - memoryCacheMs < MEMORY_CACHE_TTL) {
+    return cachedMemoryCount;
+  }
+  try {
+    const content = fs.readFileSync(MEMORY_FILE, "utf-8").trim();
+    cachedMemoryCount = content ? content.split("\n").length : 0;
+  } catch {
+    cachedMemoryCount = 0;
+  }
+  memoryCacheMs = now;
+  return cachedMemoryCount;
+}
+
 const HEARTBEAT_PROMPT_FILE = path.join(RHO_DIR, "heartbeat-prompt.txt");
 
 // ─── Shared Config ────────────────────────────────────────────────────────────
@@ -647,6 +667,9 @@ async function runAutoMemoryExtraction(
     const suffix = truncated.length < storedItems.length ? ` +${storedItems.length - truncated.length} more` : "";
     ctx.ui.notify(`${prefix}${truncated.join(" | ")}${suffix}`, "info");
   }
+
+  // Bust footer memory count cache so it updates immediately
+  memoryCacheMs = 0;
 
   return { storedLearnings, storedPrefs };
 }
@@ -1708,7 +1731,16 @@ export default function (pi: ExtensionAPI) {
 
   const formatRhoRole = (): string => {
     if (!hbState.enabled || hbState.intervalMs === 0) return "ρ off";
-    return hbIsLeader ? "ρ lead" : "ρ follow";
+    if (!hbIsLeader) return "ρ follow";
+    if (!hbState.nextCheckAt) return "ρ --m";
+    const remaining = Math.max(0, hbState.nextCheckAt - Date.now());
+    const mins = Math.ceil(remaining / 60000);
+    return `ρ ${mins}m`;
+  };
+
+  const formatMemoryCount = (): string => {
+    const count = getMemoryCount();
+    return count > 0 ? `mem:${count}` : "";
   };
 
   const setRhoFooter = (ctx: ExtensionContext): void => {
@@ -1734,8 +1766,9 @@ export default function (pi: ExtensionAPI) {
           }
 
           const usage = formatUsageBars();
+          const mem = formatMemoryCount();
           const rhoRole = formatRhoRole();
-          const rightPlain = [usage, rhoRole].filter(Boolean).join("  ");
+          const rightPlain = [usage, mem, rhoRole].filter(Boolean).join("  ");
           const right = theme.fg("dim", rightPlain);
 
           const spaces = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
@@ -2306,6 +2339,7 @@ export default function (pi: ExtensionAPI) {
           if (!result.stored) {
             return { content: [{ type: "text", text: result.reason === "duplicate" ? "Already stored" : "Not stored" }], details: { duplicate: result.reason === "duplicate" } };
           }
+          memoryCacheMs = 0;
           return { content: [{ type: "text", text: `Stored: ${params.content}` }], details: { id: result.id } };
         }
 
@@ -2316,6 +2350,7 @@ export default function (pi: ExtensionAPI) {
           if (!result.stored) {
             return { content: [{ type: "text", text: result.reason === "duplicate" ? "Already stored" : "Not stored" }], details: { duplicate: result.reason === "duplicate" } };
           }
+          memoryCacheMs = 0;
           return { content: [{ type: "text", text: `Stored [${category}]: ${params.content}` }], details: { id: result.id } };
         }
 
@@ -2386,11 +2421,13 @@ export default function (pi: ExtensionAPI) {
         case "remove": {
           if (!params.id) return { content: [{ type: "text", text: "Error: id required" }], details: { error: true } };
           const result = removeMemoryEntry(params.id);
+          memoryCacheMs = 0;
           return { content: [{ type: "text", text: result.message }], details: { ok: result.ok } };
         }
 
         case "decay": {
           const result = archiveStaleMemories();
+          memoryCacheMs = 0;
           return { content: [{ type: "text", text: result.archived > 0 ? `Archived ${result.archived} stale entries` : "No stale entries to archive" }], details: { archived: result.archived } };
         }
 
