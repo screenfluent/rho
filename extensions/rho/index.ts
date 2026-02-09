@@ -2829,19 +2829,53 @@ export default function (pi: ExtensionAPI) {
   // ── Command: /vault ────────────────────────────────────────────────────────
 
   pi.registerCommand("vault", {
-    description: "Vault status dashboard (usage: /vault)",
+    description: "Vault dashboard & inbox (usage: /vault [inbox])",
     handler: async (_args, ctx) => {
-      rebuildVaultGraph();
-      const status = getVaultStatus(VAULT_DIR, vaultGraph);
-      const typeCounts = Object.entries(status.byType).map(([t, n]) => `${n} ${t}`).join(", ");
-      const parts = [
-        `${status.totalNotes} notes`,
-        typeCounts ? `(${typeCounts})` : "",
-        `${status.orphanCount} orphans`,
-        `${status.inboxItems} inbox`,
-        `avg ${status.avgLinksPerNote.toFixed(1)} links/note`,
-      ].filter(Boolean);
-      ctx.ui.notify(`Vault: ${parts.join(" | ")}`, "info");
+      const [subcmd] = _args.trim().split(/\s+/);
+
+      switch (subcmd) {
+        case "inbox": {
+          const inboxPath = path.join(VAULT_DIR, "_inbox.md");
+          if (!fs.existsSync(inboxPath)) {
+            ctx.ui.notify("Inbox empty.", "info");
+            break;
+          }
+          const content = fs.readFileSync(inboxPath, "utf-8");
+          // Split on --- separators, skip the header
+          const entries = content.split(/^---$/m).slice(1).map(e => e.trim()).filter(Boolean);
+          if (entries.length === 0) {
+            ctx.ui.notify("Inbox empty.", "info");
+            break;
+          }
+          // Show count and first few items truncated
+          const preview = entries.slice(0, 5).map((e, i) => {
+            const firstLine = e.split("\n").find(l => l.trim() && !l.startsWith(">") && !l.startsWith("**")) || e.split("\n")[0];
+            const text = firstLine.trim();
+            return `${i + 1}. ${text.length > 60 ? text.slice(0, 57) + "..." : text}`;
+          });
+          const more = entries.length > 5 ? `\n  (+${entries.length - 5} more)` : "";
+          ctx.ui.notify(`Inbox (${entries.length}):\n${preview.join("\n")}${more}`, "info");
+          break;
+        }
+        case "":
+        case undefined: {
+          rebuildVaultGraph();
+          const status = getVaultStatus(VAULT_DIR, vaultGraph);
+          const typeCounts = Object.entries(status.byType).map(([t, n]) => `${n} ${t}`).join(", ");
+          const parts = [
+            `${status.totalNotes} notes`,
+            typeCounts ? `(${typeCounts})` : "",
+            `${status.orphanCount} orphans`,
+            `${status.inboxItems} inbox`,
+            `avg ${status.avgLinksPerNote.toFixed(1)} links/note`,
+          ].filter(Boolean);
+          ctx.ui.notify(`Vault: ${parts.join(" | ")}`, "info");
+          break;
+        }
+        default:
+          ctx.ui.notify("Usage: /vault [inbox]", "info");
+          break;
+      }
     },
   });
 
