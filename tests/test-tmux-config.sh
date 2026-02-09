@@ -52,31 +52,20 @@ else
   fail "config missing split bindings"
 fi
 
-# --- install.sh has install_tmux_config function ---
-if grep -q "install_tmux_config" "$REPO_DIR/install.sh"; then
-  pass "install.sh has install_tmux_config function"
+# --- tmux config is bootstrapped by rho init ---
+# Tmux config installation moved from install.sh to rho init (init-core.ts).
+# Verify the bootstrap logic references the tmux config.
+if grep -q "tmux" "$REPO_DIR/cli/init-core.ts"; then
+  pass "init-core.ts handles tmux config bootstrap"
 else
-  fail "install.sh missing install_tmux_config function"
+  fail "init-core.ts missing tmux config bootstrap"
 fi
 
-# --- install.sh calls install_tmux_config ---
-if grep -q "^install_tmux_config$" "$REPO_DIR/install.sh"; then
-  pass "install.sh calls install_tmux_config"
+# --- install.sh delegates to rho init ---
+if grep -q "rho init\|cli/index.ts.*init" "$REPO_DIR/install.sh"; then
+  pass "install.sh delegates bootstrap to rho init"
 else
-  fail "install.sh doesn't call install_tmux_config"
-fi
-
-# --- install.sh skips on android ---
-if grep -q 'PLATFORM.*android' "$REPO_DIR/install.sh" | head -1; then
-  pass "install_tmux_config skips on android"
-else
-  # Check more carefully
-  FUNC=$(sed -n '/^install_tmux_config/,/^}/p' "$REPO_DIR/install.sh")
-  if echo "$FUNC" | grep -q 'android'; then
-    pass "install_tmux_config skips on android"
-  else
-    fail "install_tmux_config doesn't check for android"
-  fi
+  fail "install.sh doesn't call rho init"
 fi
 
 echo ""

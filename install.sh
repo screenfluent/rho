@@ -147,51 +147,12 @@ cleanup_old() {
 }
 
 # --- Install Extensions ---
-
-install_extensions() {
-  mkdir -p "$PI_DIR/extensions"
-
-  # IMPORTANT: core Rho extensions are loaded via pi package loading + filtering
-  # (settings.json) and MUST NOT be symlinked into ~/.pi/agent/extensions,
-  # otherwise module enable/disable in init.toml cannot work.
-
-  # Platform extensions (Termux/Tasker integration, etc) are still installed
-  # as local extensions, since pi has no native platform-conditional package
-  # resources.
-  local plat_ext="$REPO_DIR/platforms/$PLATFORM/extensions"
-  if [ -d "$plat_ext" ]; then
-    for entry in "$plat_ext"/*; do
-      [ -e "$entry" ] || continue
-      if [ -f "$entry" ] && [[ "$entry" == *.ts ]]; then
-        ln -sf "$entry" "$PI_DIR/extensions/$(basename "$entry")"
-      elif [ -d "$entry" ] && { [ -f "$entry/index.ts" ] || [ -f "$entry/index.js" ]; }; then
-        ln -sf "$entry" "$PI_DIR/extensions/$(basename "$entry")"
-      fi
-    done
-    echo "✓ Installed $PLATFORM extensions"
-  fi
-}
+# NOTE: Platform extensions are now installed by `rho init`.
+# Core extensions are loaded via pi package entry (settings.json).
 
 # --- Install Skills ---
-
-install_skills() {
-  mkdir -p "$PI_DIR/skills"
-
-  # IMPORTANT: core Rho skills are loaded via pi package loading + filtering
-  # (settings.json) and MUST NOT be symlinked into ~/.pi/agent/skills,
-  # otherwise module enable/disable in init.toml cannot work.
-
-  # Platform skills are still installed locally.
-  local plat_skills="$REPO_DIR/platforms/$PLATFORM/skills"
-  if [ -d "$plat_skills" ]; then
-    for d in "$plat_skills"/*/; do
-      [ -d "$d" ] || continue
-      [ -f "${d}SKILL.md" ] || continue
-      ln -sf "$d" "$PI_DIR/skills/$(basename "$d")"
-    done
-    echo "✓ Installed $PLATFORM skills"
-  fi
-}
+# NOTE: Platform skills are now installed by `rho init`.
+# Core skills are loaded via pi package entry (settings.json).
 
 # --- Install CLI launcher ---
 
@@ -246,124 +207,27 @@ install_cli() {
   fi
 }
 
-# --- Bootstrap Templates ---
-
-bootstrap_templates() {
-  mkdir -p "$RHO_DIR"
-
-  # AGENTS.md — has template variables that need substitution
-  # Keep it in ~/.rho/ (no files or symlinks in $HOME).
-  if [ ! -f "$RHO_DIR/AGENTS.md" ] || [ "$FORCE" -eq 1 ]; then
-    if [ -f "$REPO_DIR/AGENTS.md.template" ]; then
-      # Detect OS string for template
-      local os_string
-      if [ "$PLATFORM" = "android" ]; then
-        os_string="Android / Termux $TERMUX_VERSION"
-      elif [ -f /etc/os-release ]; then
-        os_string=$(grep ^PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
-      else
-        os_string=$(uname -s)
-      fi
-
-      # Read agent name from init.toml (created by bootstrap_rho_config).
-      # Falls back to "rho" if init.toml is missing or unparseable.
-      local agent_name="rho"
-      if [ -f "$RHO_DIR/init.toml" ]; then
-        local parsed_name
-        parsed_name=$(grep -m1 '^name\s*=' "$RHO_DIR/init.toml" | sed 's/^name\s*=\s*"\([^"]*\)".*/\1/' 2>/dev/null)
-        if [ -n "$parsed_name" ]; then
-          agent_name="$parsed_name"
-        fi
-      fi
-      local agent_desc="An AI agent powered by rho: persistent memory, heartbeat check-ins, and a knowledge vault."
-
-      sed -e "s|{{NAME}}|$agent_name|g" \
-          -e "s|{{DESCRIPTION}}|$agent_desc|g" \
-          -e "s|{{OS}}|$os_string|g" \
-          -e "s|{{ARCH}}|$(uname -m)|g" \
-          -e "s|{{SHELL}}|$(basename "$SHELL")|g" \
-          -e "s|{{HOME}}|$HOME|g" \
-          -e "s|{{CONFIG_PATH}}|$PI_DIR|g" \
-          -e "s|{{BRAIN_PATH}}|$BRAIN_DIR|g" \
-          -e "s|{{RHO_DIR}}|$RHO_DIR|g" \
-          -e "s|{{SKILLS_PATH}}|$PI_DIR/skills|g" \
-          "$REPO_DIR/AGENTS.md.template" > "$RHO_DIR/AGENTS.md"
-
-      echo "✓ Created ~/.rho/AGENTS.md (agent: $agent_name)"
-    fi
-  else
-    echo "• ~/.rho/AGENTS.md exists (use --force to overwrite)"
-  fi
-
-  # Simple template copies — don't overwrite if they exist
-  local -A templates=(
-    ["RHO.md.template"]="$RHO_DIR/RHO.md"
-    ["HEARTBEAT.md.template"]="$RHO_DIR/HEARTBEAT.md"
-  )
-
-  for tmpl in "${!templates[@]}"; do
-    local target="${templates[$tmpl]}"
-    if [ ! -f "$target" ]; then
-      if [ -f "$REPO_DIR/$tmpl" ]; then
-        cp "$REPO_DIR/$tmpl" "$target"
-        echo "✓ Created $target"
-      fi
-    else
-      echo "• $(basename "$target") exists (skipped)"
-    fi
-  done
-}
-
-# --- Bootstrap Brain ---
-
-bootstrap_brain() {
-  mkdir -p "$BRAIN_DIR"
-  if [ -d "$REPO_DIR/brain" ]; then
-    for f in "$REPO_DIR/brain"/*.jsonl.default; do
-      [ -f "$f" ] || continue
-      local target="$BRAIN_DIR/$(basename "${f%.default}")"
-      if [ ! -f "$target" ]; then
-        cp "$f" "$target"
-        echo "✓ Created $(basename "$target")"
-      fi
-    done
-  fi
-}
-
-# --- Install Rho-scoped tmux config ---
-
-install_tmux_config() {
-  # Rho runs tmux on a dedicated socket with its own config file.
-  # We install the default config to ~/.rho/tmux.conf (never overwriting).
-  # This avoids touching the user's ~/.tmux.conf.
-
-  local src="$REPO_DIR/configs/tmux-rho.conf"
-  local dest="$RHO_DIR/tmux.conf"
-
-  if [ ! -f "$src" ]; then
-    return
-  fi
-
-  mkdir -p "$RHO_DIR"
-
-  if [ ! -f "$dest" ]; then
-    cp "$src" "$dest"
-    echo "✓ Installed tmux config template -> ~/.rho/tmux.conf"
-    echo "  (rho uses the built-in tmux config by default; set settings.heartbeat.tmux_config to use this file)"
-  else
-    echo "• ~/.rho/tmux.conf exists (skipped)"
-  fi
-}
+# --- Bootstrap Templates, Brain, Tmux Config ---
+# NOTE: All bootstrapping (AGENTS.md, RHO.md, HEARTBEAT.md, brain defaults,
+# tmux config, platform skills/extensions) is now handled by `rho init`.
+# install.sh just calls `rho init` in bootstrap_rho_config below.
 
 # --- Bootstrap Doom-style config ---
 
 bootstrap_rho_config() {
   echo ""
-  echo "Bootstrapping config (init.toml -> pi settings.json)..."
+  echo "Bootstrapping config..."
 
-  # Create ~/.rho/init.toml if missing.
-  node --experimental-strip-types "$REPO_DIR/cli/index.ts" init --name "rho" >/dev/null 2>&1 || true
+  # rho init handles everything: config files, templates, brain defaults,
+  # tmux config, and platform skills/extensions.
+  local init_args="--name rho"
+  if [ "$FORCE" -eq 1 ]; then
+    init_args="$init_args --force"
+  fi
+  node --experimental-strip-types "$REPO_DIR/cli/index.ts" init $init_args
 
+  echo ""
+  echo "Syncing config..."
   # Sync using the local repo path as the package source.
   RHO_SOURCE="$REPO_DIR" node --experimental-strip-types "$REPO_DIR/cli/index.ts" sync
 }
@@ -388,13 +252,8 @@ detect_platform
 check_dependencies
 install_node_deps
 cleanup_old
-install_extensions
-install_skills
 install_cli
 bootstrap_rho_config
-bootstrap_templates
-bootstrap_brain
-install_tmux_config
 run_platform_setup
 
 echo ""

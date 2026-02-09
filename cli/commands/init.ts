@@ -1,8 +1,14 @@
 /**
  * rho init — Initialize a new Rho configuration.
  *
- * Creates ~/.rho/ with init.toml, packages.toml, and SOUL.md.
+ * Creates ~/.rho/ with init.toml, packages.toml, SOUL.md, and bootstraps
+ * templates (AGENTS.md, RHO.md, HEARTBEAT.md), brain defaults, tmux config,
+ * and platform-specific skills/extensions.
+ *
  * Preserves existing files — only creates what's missing.
+ * This is the single entry point for both:
+ *   - Clone route:  git clone ... && ./install.sh  (install.sh calls rho init)
+ *   - npm route:    npm install -g @rhobot-dev/rho && rho init
  */
 
 import * as fs from "node:fs";
@@ -11,27 +17,33 @@ import * as os from "node:os";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { detectPlatform, planInit } from "../init-core.ts";
+import { detectPlatform, planInit, planBootstrap } from "../init-core.ts";
 
 const HOME = process.env.HOME || os.homedir();
 const RHO_DIR = path.join(HOME, ".rho");
+const PI_DIR = path.join(HOME, ".pi", "agent");
 
 export async function run(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`rho init [--name <agent-name>]
 
-Initialize Rho configuration in ~/.rho/.
+Initialize Rho in ~/.rho/.
 
-Creates init.toml, packages.toml, and SOUL.md with sensible defaults.
-Existing files are never overwritten.
+Creates config files (init.toml, packages.toml, SOUL.md), bootstraps
+templates (AGENTS.md, RHO.md, HEARTBEAT.md), brain defaults, tmux config,
+and platform-specific skills/extensions.
+
+Existing files are never overwritten (except AGENTS.md with --force).
 
 Options:
   --name <name>  Agent name (default: "rho")
+  --force        Regenerate AGENTS.md even if it exists
   --verbose      Show detailed output`);
     return;
   }
 
   const verbose = args.includes("--verbose");
+  const force = args.includes("--force");
 
   // Parse --name flag (or prompt in interactive terminals)
   let name = "rho";
@@ -48,6 +60,15 @@ Options:
     nameProvided = true;
   }
 
+  // Read name from existing init.toml if present and not provided via flag
+  if (!nameProvided) {
+    const existingName = readAgentNameFromToml();
+    if (existingName) {
+      name = existingName;
+      nameProvided = true;
+    }
+  }
+
   if (!nameProvided && process.stdin.isTTY) {
     const rl = createInterface({ input, output });
     try {
@@ -61,7 +82,8 @@ Options:
   const platform = detectPlatform();
   if (verbose) console.log(`Platform: ${platform}`);
 
-  // Check what exists
+  // ── Phase 1: Config files (init.toml, packages.toml, SOUL.md) ──
+
   const existingFiles = new Set<string>();
   if (fs.existsSync(RHO_DIR)) {
     for (const entry of fs.readdirSync(RHO_DIR)) {
@@ -86,29 +108,129 @@ Options:
     }
   }
 
-  // Write files
+  // Write config files
   let created = 0;
   for (const [filename, content] of plan.filesToCreate) {
     const fullPath = path.join(RHO_DIR, filename);
     fs.writeFileSync(fullPath, content);
-    if (verbose) console.log(`Created ${fullPath}`);
+    if (verbose) console.log(`✓ Created ${fullPath}`);
     created++;
   }
 
-  if (plan.existingConfigs.length > 0) {
-    console.log(`Preserved existing: ${plan.existingConfigs.join(", ")}`);
+  // ── Phase 2: Bootstrap (templates, brain, tmux, platform) ──
+
+  // Re-read existing files after phase 1
+  const existingRhoFiles = new Set<string>();
+  if (fs.existsSync(RHO_DIR)) {
+    for (const entry of fs.readdirSync(RHO_DIR)) {
+      existingRhoFiles.add(entry);
+    }
+  }
+
+  const existingBrainFiles = new Set<string>();
+  const brainDir = path.join(RHO_DIR, "brain");
+  if (fs.existsSync(brainDir)) {
+    for (const entry of fs.readdirSync(brainDir)) {
+      existingBrainFiles.add(entry);
+    }
+  }
+
+  const bootstrap = planBootstrap({
+    name,
+    rhoDir: RHO_DIR,
+    piDir: PI_DIR,
+    platform,
+    existingRhoFiles,
+    existingBrainFiles,
+    tmuxConfigExists: fs.existsSync(path.join(RHO_DIR, "tmux.conf")),
+    force,
+  });
+
+  // Write template files (AGENTS.md, RHO.md, HEARTBEAT.md)
+  for (const [filename, content] of bootstrap.filesToCreate) {
+    const fullPath = path.join(RHO_DIR, filename);
+    fs.writeFileSync(fullPath, content);
+    if (verbose) console.log(`✓ Created ${fullPath}`);
+    created++;
+  }
+
+  // Copy brain defaults
+  for (const [src, target] of bootstrap.brainFilesToCopy) {
+    fs.copyFileSync(src, target);
+    if (verbose) console.log(`✓ Created ${path.basename(target)}`);
+    created++;
+  }
+
+  // Copy tmux config
+  if (bootstrap.tmuxConfig) {
+    fs.copyFileSync(bootstrap.tmuxConfig.source, bootstrap.tmuxConfig.target);
+    if (verbose) console.log(`✓ Installed tmux config -> ~/.rho/tmux.conf`);
+    created++;
+  }
+
+  // Symlink platform skills
+  if (bootstrap.platformSkillLinks.length > 0) {
+    fs.mkdirSync(path.join(PI_DIR, "skills"), { recursive: true });
+    for (const link of bootstrap.platformSkillLinks) {
+      try {
+        // Remove existing symlink if present (re-link on upgrade)
+        if (fs.lstatSync(link.target).isSymbolicLink()) {
+          fs.unlinkSync(link.target);
+        }
+      } catch {
+        // doesn't exist, that's fine
+      }
+      fs.symlinkSync(link.source, link.target);
+    }
+    if (verbose) console.log(`✓ Installed ${platform} skills (${bootstrap.platformSkillLinks.length})`);
+  }
+
+  // Symlink platform extensions
+  if (bootstrap.platformExtensionLinks.length > 0) {
+    fs.mkdirSync(path.join(PI_DIR, "extensions"), { recursive: true });
+    for (const link of bootstrap.platformExtensionLinks) {
+      try {
+        if (fs.lstatSync(link.target).isSymbolicLink()) {
+          fs.unlinkSync(link.target);
+        }
+      } catch {
+        // doesn't exist
+      }
+      fs.symlinkSync(link.source, link.target);
+    }
+    if (verbose) console.log(`✓ Installed ${platform} extensions (${bootstrap.platformExtensionLinks.length})`);
+  }
+
+  // ── Summary ──
+
+  const allSkipped = [...plan.existingConfigs, ...bootstrap.skipped];
+  if (allSkipped.length > 0) {
+    console.log(`Preserved existing: ${allSkipped.join(", ")}`);
   }
 
   if (created > 0) {
     console.log(
-      `Initialized ${RHO_DIR} (${created} file${created > 1 ? "s" : ""} created, agent: ${name})`,
+      `Initialized ${RHO_DIR} (${created} file${created > 1 ? "s" : ""} created, agent: ${name}, platform: ${platform})`,
     );
   } else {
     console.log(`${RHO_DIR} already initialized. No files changed.`);
   }
 
   console.log(`\nNext steps:`);
-  console.log(`  1. Edit ~/.rho/init.toml to configure modules`);
-  console.log(`  2. Edit ~/.rho/SOUL.md to define your agent's identity`);
-  console.log(`  3. Run \`rho sync\` to apply configuration`);
+  console.log(`  1. Run \`rho sync\` to apply configuration`);
+  console.log(`  2. Edit ~/.rho/init.toml to configure modules`);
+  console.log(`  3. Edit ~/.rho/SOUL.md to define your agent's identity`);
+}
+
+/** Read agent name from existing init.toml, if present. */
+function readAgentNameFromToml(): string | null {
+  try {
+    const tomlPath = path.join(RHO_DIR, "init.toml");
+    if (!fs.existsSync(tomlPath)) return null;
+    const content = fs.readFileSync(tomlPath, "utf-8");
+    const match = content.match(/^name\s*=\s*"([^"]*)"/m);
+    return match?.[1] || null;
+  } catch {
+    return null;
+  }
 }

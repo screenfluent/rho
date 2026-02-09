@@ -316,7 +316,37 @@ fi
 # Should contain the actual home path
 assert_contains "$agents_content" "$HOME" "AGENTS.md has correct HOME path"
 
-# ── 12. Unit Tests ─────────────────────────────────────
+# ── 12. npm Install Route (rho init without install.sh) ─
+
+echo ""
+echo "-- npm Install Route --"
+
+# Simulate what happens when a user does: npm install -g @rhobot-dev/rho && rho init
+# We test that rho init alone creates everything needed.
+NPM_TEST_HOME=$(mktemp -d)
+env HOME="$NPM_TEST_HOME" PATH="$HOME/.local/bin:$PATH" \
+  node --experimental-strip-types "$REPO_DIR/cli/index.ts" init --name "npm-test" >/dev/null 2>&1
+
+assert_file_exists "$NPM_TEST_HOME/.rho/init.toml" "npm route: init.toml created"
+assert_file_exists "$NPM_TEST_HOME/.rho/AGENTS.md" "npm route: AGENTS.md created"
+assert_file_exists "$NPM_TEST_HOME/.rho/RHO.md" "npm route: RHO.md created"
+assert_file_exists "$NPM_TEST_HOME/.rho/HEARTBEAT.md" "npm route: HEARTBEAT.md created"
+assert_file_exists "$NPM_TEST_HOME/.rho/SOUL.md" "npm route: SOUL.md created"
+assert_file_exists "$NPM_TEST_HOME/.rho/brain/core.jsonl" "npm route: brain/core.jsonl created"
+assert_file_exists "$NPM_TEST_HOME/.rho/tmux.conf" "npm route: tmux.conf created"
+
+# Verify agent name was substituted
+npm_agents=$(cat "$NPM_TEST_HOME/.rho/AGENTS.md")
+assert_contains "$npm_agents" "npm-test" "npm route: AGENTS.md has agent name"
+if echo "$npm_agents" | grep -q '{{'; then
+  fail "npm route: AGENTS.md has unresolved template vars"
+else
+  pass "npm route: AGENTS.md template vars resolved"
+fi
+
+rm -rf "$NPM_TEST_HOME"
+
+# ── 13. Unit Tests ─────────────────────────────────────
 
 echo ""
 echo "-- Unit Tests (from repo) --"
