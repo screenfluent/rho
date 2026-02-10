@@ -43,6 +43,7 @@ import { execSync } from "node:child_process";
 import { VaultSearch, parseFrontmatter, extractWikilinks, extractTitle } from "../lib/mod.ts";
 import { handleBrainAction } from "../lib/brain-tool.ts";
 import { readBrain, foldBrain, buildBrainPrompt, appendBrainEntryWithDedup, BRAIN_PATH } from "../lib/brain-store.ts";
+import { detectMigration, runMigration } from "../lib/brain-migration.ts";
 
 export { parseFrontmatter, extractWikilinks };
 export {
@@ -1974,6 +1975,20 @@ Instructions:
     // Vault: rebuild graph
     rebuildVaultGraph();
 
+    // Migration detection
+    if (!IS_SUBAGENT) {
+      const migration = detectMigration();
+      if (migration.hasLegacy && !migration.alreadyMigrated) {
+        const msg =
+          `🧠 Brain migration available: Found legacy files (${migration.legacyFiles.map((f) => path.basename(f)).join(", ")}). ` +
+          `Run /migrate to import them into brain.jsonl. ` +
+          `Legacy files will be left untouched. Use the brain tool: brain action=add type=meta key=migration.v2 value=skip to dismiss.`;
+        if (ctx.hasUI) {
+          ctx.ui.notify(msg, "warning");
+        }
+      }
+    }
+
     // Heartbeat: restore state, acquire leadership, and schedule
     if (!IS_SUBAGENT) {
       startHeartbeatLeadership(ctx);
@@ -2779,6 +2794,36 @@ Instructions:
       } else {
         ctx.ui.notify("Usage: /brain [stats|search <query>]", "error");
       }
+    },
+  });
+
+  // ── Command: /migrate ────────────────────────────────────────────────────
+
+  pi.registerCommand("migrate", {
+    description: "Migrate legacy brain files to brain.jsonl",
+    handler: async (_args, ctx) => {
+      const migration = detectMigration();
+      if (migration.alreadyMigrated) {
+        ctx.ui.notify("Migration already completed.", "info");
+        return;
+      }
+      if (!migration.hasLegacy) {
+        ctx.ui.notify("No legacy files to migrate.", "info");
+        return;
+      }
+      ctx.ui.notify("Starting migration...", "info");
+      const stats = await runMigration();
+      brainCache = null; // invalidate
+      const parts: string[] = [];
+      if (stats.behaviors) parts.push(`${stats.behaviors} behaviors`);
+      if (stats.identity) parts.push(`${stats.identity} identity`);
+      if (stats.user) parts.push(`${stats.user} user`);
+      if (stats.learnings) parts.push(`${stats.learnings} learnings`);
+      if (stats.preferences) parts.push(`${stats.preferences} preferences`);
+      if (stats.contexts) parts.push(`${stats.contexts} contexts`);
+      if (stats.tasks) parts.push(`${stats.tasks} tasks`);
+      const summary = parts.length ? parts.join(", ") : "nothing new";
+      ctx.ui.notify(`✅ Migration complete: ${summary} (${stats.skipped} skipped)`, "success");
     },
   });
 

@@ -51,3 +51,6 @@ export {
 
 export type { BrainActionResult } from "./brain-tool.ts";
 export { handleBrainAction } from "./brain-tool.ts";
+
+export type { MigrationPaths, MigrationStatus, MigrationStats } from "./brain-migration.ts";
+export { detectMigration, detectMigrationWithPaths, runMigration, runMigrationWithPaths } from "./brain-migration.ts";
