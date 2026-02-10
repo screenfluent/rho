@@ -1,0 +1,113 @@
+# Chat UX fixes: user messages, unified tool blocks, fork UX, streaming
+# 5 tasks, Builder → Validator ping-pong
+
+event_loop:
+  completion_promise: "LOOP_COMPLETE"
+  starting_event: "build.start"
+  max_iterations: 20
+  max_runtime_seconds: 7200
+
+cli:
+  backend: "pi"
+  prompt_mode: "arg"
+
+core:
+  specs_dir: ".ralph/specs/"
+  guardrails:
+    - "Read the FULL task file before implementing — the CSS/HTML/JS snippets are suggestions, adapt as needed"
+    - "Do NOT break existing functionality — session viewing, file editing, and tasks must still work"
+    - "The web server is running at http://127.0.0.1:3141"
+    - "Test changes by reading the modified files and verifying syntax"
+    - "All frontend code is in web/public/ — no build step"
+
+hats:
+  builder:
+    name: "⚙️ Builder"
+    description: "Implements one chat UX task at a time."
+    triggers: ["build.start", "validation.failed"]
+    publishes: ["implementation.ready"]
+    default_publishes: "implementation.ready"
+    instructions: |
+      ## BUILDER MODE
+
+      Implement the NEXT pending task from `.ralph/specs/chat-ux/tasks/`.
+
+      ### RULES
+      1. `grep -l "status: pending" .ralph/specs/chat-ux/tasks/*.code-task.md` to find next
+      2. If none pending → publish `implementation.ready` immediately
+      3. Read the task AND the design doc (`.ralph/specs/chat-ux/design.md`)
+      4. Implement the changes
+      5. Update frontmatter to `status: completed`
+      6. Publish `implementation.ready`
+
+      ### KEY FILES
+      - `web/public/js/chat.js` — Alpine.js chat component (~1700 lines)
+      - `web/public/index.html` — HTML templates with Alpine directives
+      - `web/public/css/style.css` — All styles
+      - `web/public/js/files.js` — Files component (don't break)
+      - `web/public/js/tasks.js` — Tasks component (don't break)
+
+      ### CONTEXT
+      The chat component uses Alpine.js with `x-data="rhoChat()"`. Key state:
+      - `renderedMessages` — array of message objects displayed in the thread
+      - `activeRpcSessionId` — set when an RPC pi process is active (fork mode)
+      - `isStreaming` — true during agent response streaming
+      - Parts in messages have `type`: text, thinking, tool_call, tool_result, bash, compaction, etc.
+
+      Tool calls come through as `toolcall_start`/`toolcall_delta`/`toolcall_end` deltas.
+      Tool execution comes through as `tool_execution_start`/`tool_execution_update`/`tool_execution_end` events.
+      
+      The goal is to merge tool_call + tool_result into one block, show previews, and keep everything collapsed by default.
+
+      ### If triggered by validation.failed
+      Fix the issues described in the validator feedback.
+
+  validator:
+    name: "✅ Validator"
+    description: "Routes back for more tasks or validates completion."
+    triggers: ["implementation.ready"]
+    publishes: ["validation.passed", "validation.failed"]
+    default_publishes: "validation.passed"
+    instructions: |
+      ## VALIDATOR MODE
+
+      ```bash
+      grep -l "status: pending" .ralph/specs/chat-ux/tasks/*.code-task.md 2>/dev/null
+      ```
+
+      If pending tasks → `validation.failed` with "More tasks pending, continue"
+
+      If all complete:
+      - Check CSS syntax (no unclosed braces, no obvious errors)
+      - Check JS syntax (no unclosed functions, brackets match)
+      - Check HTML (templates properly closed)
+      - `curl -s http://127.0.0.1:3141/api/health` (server still up)
+      - If OK → `validation.passed`
+      - If issues → `validation.failed` with details
+
+  committer:
+    name: "📦 Committer"
+    description: "Commits the chat UX improvements."
+    triggers: ["validation.passed"]
+    publishes: ["LOOP_COMPLETE"]
+    default_publishes: "LOOP_COMPLETE"
+    instructions: |
+      ## COMMITTER MODE
+
+      ```bash
+      cd ~/projects/rho
+      git add web/
+      git commit -m "feat(web): chat UX improvements
+
+      - Render user messages immediately on prompt submit
+      - Unified tool call blocks with preview, status icon, duration
+      - Thinking blocks collapsed by default with preview
+      - Fork loading state and live/read-only indicators
+      - Fork buttons on user messages only, shown on hover
+      - Typing indicator during streaming
+      - Auto-scroll with manual scroll detection
+      - Textarea auto-resize
+      - Keyboard shortcut hints"
+      ```
+
+      Publish LOOP_COMPLETE.
