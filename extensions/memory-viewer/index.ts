@@ -19,7 +19,7 @@ import { getMarkdownTheme } from "@mariozechner/pi-coding-agent";
 import { Markdown, Input, matchesKey, Key, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import type { TUI } from "@mariozechner/pi-tui";
 import type { Theme } from "@mariozechner/pi-coding-agent";
-import { readBrain, foldBrain, BRAIN_PATH, scoreLearning } from "../lib/brain-store.ts";
+import { readBrain, foldBrain, BRAIN_PATH, scoreLearning, getInjectedIds } from "../lib/brain-store.ts";
 import type { LearningEntry } from "../lib/brain-store.ts";
 
 function fmtDate(iso: string): string {
@@ -37,6 +37,8 @@ function buildMarkdown(detailed = false, filter = ""): string {
 	const sections: string[] = [];
 	const cwd = process.cwd();
 	const f = filter.trim();
+	const injected = getInjectedIds(brain, cwd);
+	const dot = (id: string) => injected.has(id) ? "●" : "○";
 
 	// Behavior section
 	const filteredBehaviors = f ? brain.behaviors.filter((b) => matches(f, b.text)) : brain.behaviors;
@@ -49,15 +51,15 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		let s = `# Behavior (${count})\n`;
 		if (dos.length > 0) {
 			s += "\n**Do:**\n";
-			for (const b of dos) s += detailed ? `- ${b.text}  \`[${b.id}]\`\n` : `- ${b.text}\n`;
+			for (const b of dos) s += detailed ? `- ${dot(b.id)} ${b.text}  \`[${b.id}]\`\n` : `- ${dot(b.id)} ${b.text}\n`;
 		}
 		if (donts.length > 0) {
 			s += "\n**Don't:**\n";
-			for (const b of donts) s += detailed ? `- ${b.text}  \`[${b.id}]\`\n` : `- ${b.text}\n`;
+			for (const b of donts) s += detailed ? `- ${dot(b.id)} ${b.text}  \`[${b.id}]\`\n` : `- ${dot(b.id)} ${b.text}\n`;
 		}
 		if (values.length > 0) {
 			s += "\n**Values:**\n";
-			for (const b of values) s += detailed ? `- ${b.text}  \`[${b.id}]\`\n` : `- ${b.text}\n`;
+			for (const b of values) s += detailed ? `- ${dot(b.id)} ${b.text}  \`[${b.id}]\`\n` : `- ${dot(b.id)} ${b.text}\n`;
 		}
 		sections.push(s);
 	}
@@ -68,7 +70,7 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		const count = f ? `${filteredIdentity.length}/${brain.identity.size} match` : `${brain.identity.size}`;
 		let s = `# Identity (${count})\n`;
 		for (const [key, entry] of filteredIdentity) {
-			s += detailed ? `- ${key}: ${entry.value}  \`[${fmtDate(entry.created)}]\`\n` : `- ${key}: ${entry.value}\n`;
+			s += detailed ? `- ○ ${key}: ${entry.value}  \`[${fmtDate(entry.created)}]\`\n` : `- ○ ${key}: ${entry.value}\n`;
 		}
 		sections.push(s);
 	}
@@ -79,7 +81,7 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		const count = f ? `${filteredUser.length}/${brain.user.size} match` : `${brain.user.size}`;
 		let s = `# User (${count})\n`;
 		for (const [key, entry] of filteredUser) {
-			s += detailed ? `- ${key}: ${entry.value}  \`[${fmtDate(entry.created)}]\`\n` : `- ${key}: ${entry.value}\n`;
+			s += detailed ? `- ○ ${key}: ${entry.value}  \`[${fmtDate(entry.created)}]\`\n` : `- ○ ${key}: ${entry.value}\n`;
 		}
 		sections.push(s);
 	}
@@ -97,7 +99,7 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		}
 		for (const [cat, prefs] of byCategory) {
 			s += `\n**${cat}:**\n`;
-			for (const e of prefs) s += detailed ? `- ${e.text}  \`[${e.id} · ${fmtDate(e.created)}]\`\n` : `- ${e.text}\n`;
+			for (const e of prefs) s += detailed ? `- ${dot(e.id)} ${e.text}  \`[${e.id} · ${fmtDate(e.created)}]\`\n` : `- ${dot(e.id)} ${e.text}\n`;
 		}
 		sections.push(s);
 	}
@@ -108,7 +110,7 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		const count = f ? `${filteredContexts.length}/${brain.contexts.length} match` : `${brain.contexts.length}`;
 		let s = `# Context (${count})\n`;
 		for (const c of filteredContexts) {
-			s += detailed ? `- **${c.project}** — ${c.path}  \`[${c.id} · ${fmtDate(c.created)}]\`\n` : `- **${c.project}** — ${c.path}\n`;
+			s += detailed ? `- ${dot(c.id)} **${c.project}** — ${c.path}  \`[${c.id} · ${fmtDate(c.created)}]\`\n` : `- ${dot(c.id)} **${c.project}** — ${c.path}\n`;
 		}
 		sections.push(s);
 	}
@@ -122,9 +124,9 @@ function buildMarkdown(detailed = false, filter = ""): string {
 			if (detailed) {
 				const score = scoreLearning(l, cwd);
 				const src = l.source || "unknown";
-				s += `- ${l.text}  \`[${src} · ${fmtDate(l.created)} · score:${score}]\`\n`;
+				s += `- ${dot(l.id)} ${l.text}  \`[${src} · ${fmtDate(l.created)} · score:${score}]\`\n`;
 			} else {
-				s += `- ${l.text}\n`;
+				s += `- ${dot(l.id)} ${l.text}\n`;
 			}
 		}
 		sections.push(s);
@@ -143,9 +145,9 @@ function buildMarkdown(detailed = false, filter = ""): string {
 				const nextDue = r.next_due ? `next:${fmtDate(r.next_due)}` : "";
 				const result = r.last_result ? `result:${r.last_result}` : "";
 				const meta = [lastRun, nextDue, result].filter(Boolean).join(" · ");
-				s += `- [${r.id}] ${r.text} (${cadence}, ${status})  \`[${meta}]\`\n`;
+				s += `- ○ [${r.id}] ${r.text} (${cadence}, ${status})  \`[${meta}]\`\n`;
 			} else {
-				s += `- [${r.id}] ${r.text} (${cadence}, ${status})\n`;
+				s += `- ○ [${r.id}] ${r.text} (${cadence}, ${status})\n`;
 			}
 		}
 		sections.push(s);
@@ -163,18 +165,18 @@ function buildMarkdown(detailed = false, filter = ""): string {
 			const due = t.due ? ` due:${t.due}` : "";
 			if (detailed) {
 				const tags = t.tags?.length ? ` tags:${t.tags.join(",")}` : "";
-				s += `- [ ] [${t.id}] ${t.description}${pri}${due}  \`[${fmtDate(t.created)}${tags}]\`\n`;
+				s += `- ○ [ ] [${t.id}] ${t.description}${pri}${due}  \`[${fmtDate(t.created)}${tags}]\`\n`;
 			} else {
-				s += `- [ ] [${t.id}] ${t.description}${pri}${due}\n`;
+				s += `- ○ [ ] [${t.id}] ${t.description}${pri}${due}\n`;
 			}
 		}
 		for (const t of done) {
 			if (detailed) {
 				const completed = t.completedAt ? `completed:${fmtDate(t.completedAt)}` : "";
 				const tags = t.tags?.length ? ` tags:${t.tags.join(",")}` : "";
-				s += `- [x] [${t.id}] ${t.description}  \`[${completed}${tags}]\`\n`;
+				s += `- ○ [x] [${t.id}] ${t.description}  \`[${completed}${tags}]\`\n`;
 			} else {
-				s += `- [x] [${t.id}] ${t.description}\n`;
+				s += `- ○ [x] [${t.id}] ${t.description}\n`;
 			}
 		}
 		sections.push(s);
@@ -186,7 +188,7 @@ function buildMarkdown(detailed = false, filter = ""): string {
 		const count = f ? `${filteredMeta.length}/${brain.meta.size} match` : `${brain.meta.size}`;
 		let s = `# Meta (${count})\n`;
 		for (const [key, entry] of filteredMeta) {
-			s += `- ${key}: ${entry.value}\n`;
+			s += `- ○ ${key}: ${entry.value}\n`;
 		}
 		sections.push(s);
 	}

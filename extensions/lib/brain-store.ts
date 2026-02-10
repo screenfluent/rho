@@ -603,3 +603,96 @@ export function buildBrainPrompt(
 
   return "## Memory\n\n" + sections.join("\n\n");
 }
+
+/**
+ * Compute which entry IDs would be included in the prompt.
+ * Mirrors buildBrainPrompt logic without rendering the actual text.
+ */
+export function getInjectedIds(
+  brain: MaterializedBrain,
+  cwd: string,
+  opts?: { promptBudget?: number },
+): Set<string> {
+  const ids = new Set<string>();
+  const totalBudget = opts?.promptBudget ?? DEFAULT_BUDGET;
+  const headerOverhead = approxTokens("## Memory\n\n");
+  const budget = totalBudget - headerOverhead;
+
+  let behaviorBudget = Math.floor(budget * SECTION_WEIGHTS.behavior);
+  let prefsBudget = Math.floor(budget * SECTION_WEIGHTS.preferences);
+  let contextBudget = Math.floor(budget * SECTION_WEIGHTS.context);
+  let learningsBudget = Math.floor(budget * SECTION_WEIGHTS.learnings);
+
+  // ── Behaviors ──
+  const behaviorLines = brain.behaviors.map((b) => ({ id: b.id, text: b.text }));
+  if (behaviorLines.length > 0) {
+    const header = "## Behavior";
+    let used = approxTokens(header + "\n");
+    for (const b of behaviorLines) {
+      const t = approxTokens(b.text + "\n");
+      if (used + t > behaviorBudget && ids.size > 0) break;
+      ids.add(b.id);
+      used += t;
+    }
+    learningsBudget += Math.max(0, behaviorBudget - used);
+  } else {
+    learningsBudget += behaviorBudget;
+  }
+
+  // ── Preferences ──
+  if (brain.preferences.length > 0) {
+    const header = "## Preferences";
+    let used = approxTokens(header + "\n");
+    // Group by category like buildBrainPrompt
+    const byCat = new Map<string, typeof brain.preferences>();
+    for (const p of brain.preferences) {
+      const arr = byCat.get(p.category) || [];
+      arr.push(p);
+      byCat.set(p.category, arr);
+    }
+    for (const [cat, prefs] of [...byCat.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const line = `**${cat}:** ${prefs.map((p) => p.text).join(". ")}`;
+      const t = approxTokens(line + "\n");
+      if (used + t > prefsBudget) break;
+      for (const p of prefs) ids.add(p.id);
+      used += t;
+    }
+    learningsBudget += Math.max(0, prefsBudget - used);
+  } else {
+    learningsBudget += prefsBudget;
+  }
+
+  // ── Context (longest prefix match) ──
+  const matchingContexts = brain.contexts
+    .filter((c) => cwd.startsWith(c.path))
+    .sort((a, b) => b.path.length - a.path.length);
+  if (matchingContexts[0]) {
+    ids.add(matchingContexts[0].id);
+    const rendered = `## Project: ${matchingContexts[0].project}\n${matchingContexts[0].content}`;
+    const used = approxTokens(rendered);
+    learningsBudget += Math.max(0, contextBudget - used);
+  } else {
+    learningsBudget += contextBudget;
+  }
+
+  // ── Learnings (ranked by score, budget-trimmed) ──
+  if (brain.learnings.length > 0) {
+    const scored = brain.learnings
+      .map((l) => ({ entry: l, score: scoreLearning(l, cwd) }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.entry.created.localeCompare(a.entry.created);
+      });
+
+    const header = "## Learnings";
+    let used = approxTokens(header + "\n");
+    for (const s of scored) {
+      const t = approxTokens(`- ${s.entry.text}\n`);
+      if (used + t > learningsBudget && ids.size > 0) break;
+      ids.add(s.entry.id);
+      used += t;
+    }
+  }
+
+  return ids;
+}
