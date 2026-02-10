@@ -2438,15 +2438,6 @@ Instructions:
     },
   });
 
-  // ── Command: /consolidate ────────────────────────────────────────────────────
-
-  pi.registerCommand("consolidate", {
-    description: "Run memory consolidation — deduplicate, merge, and clean stale entries",
-    handler: async (_args, ctx) => {
-      ctx.ui.setEditorText("Run the memory consolidation SOP at ~/.rho/project/sops/memory-consolidate.sop.md");
-    },
-  });
-
   // ── Command: /tasks ────────────────────────────────────────────────────────
 
   if (!IS_SUBAGENT) {
