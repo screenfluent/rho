@@ -136,10 +136,10 @@ check() {
   local label="$1" cond="$2"
   if eval "$cond"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     echo "  FAIL: $label"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
