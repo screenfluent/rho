@@ -303,6 +303,14 @@ button { font: inherit; }
   white-space: nowrap;
 }
 
+.chat-session-id {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  opacity: 0.5;
+  margin-bottom: 0.15rem;
+}
+
 .chat-session-meta {
   font-size: 0.65rem;
   color: var(--text-muted);
