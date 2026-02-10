@@ -421,23 +421,38 @@ class MemoryViewerComponent {
 			result.push(border("│") + " ".repeat(innerW) + border("│"));
 		}
 
-		// ── Bottom border: keybind hints ──
+		// ── Bottom border: keybind hints (progressive — shed hints on narrow screens) ──
 		const hint = (key: string, desc: string) => th.fg("dim", key) + th.fg("muted", " " + desc);
 		const sep = th.fg("border", " · ");
+		const sepW = 3; // " · "
 
-		const hints = this.filterMode
-			? [hint("type", "filter"), hint("enter", "keep"), hint("esc", "clear")]
+		// Ordered most → least important
+		const allHints = this.filterMode
+			? [hint("esc", "clear"), hint("enter", "keep")]
 			: [
-					hint("↑↓ jk", "scroll"),
+					hint("Esc", "close"),
+					hint("/", "search"),
+					hint("↑↓", "scroll"),
+					hint("Tab", "section"),
+					hint("d", "detail"),
 					hint("PgUp/Dn", "page"),
 					hint("g/G", "top/end"),
-					hint("Tab", "section"),
-					hint("/", "search"),
-					hint("d", "detail"),
 					hint("r", "refresh"),
-					hint("Esc", "close"),
 				];
-		const hintsStr = " " + hints.join(sep) + " ";
+
+		// Greedily fit hints within available width (innerW minus padding)
+		const budget = innerW - 2; // 1 char padding each side
+		const fitted: string[] = [];
+		let usedW = 0;
+		for (const h of allHints) {
+			const hW = visibleWidth(h);
+			const needed = fitted.length > 0 ? hW + sepW : hW;
+			if (usedW + needed > budget) break;
+			fitted.push(h);
+			usedW += needed;
+		}
+
+		const hintsStr = fitted.length > 0 ? " " + fitted.join(sep) + " " : "";
 		const hintsW = visibleWidth(hintsStr);
 		const hintFill = Math.max(0, innerW - hintsW);
 		result.push(
