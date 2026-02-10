@@ -250,11 +250,33 @@ button { font: inherit; }
   overflow: hidden;
 }
 
+.chat-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .chat-section-title {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--text-dim);
+}
+
+.btn-sm {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  min-height: 24px;
+}
+
+.btn-green {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.btn-green:hover {
+  background: var(--green);
+  color: var(--bg);
 }
 
 .chat-section-meta {

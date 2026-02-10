@@ -311,6 +311,31 @@ app.post("/api/sessions/:id/fork", async (c) => {
   }
 });
 
+app.post("/api/sessions/new", async (c) => {
+  try {
+    const { randomUUID } = await import("node:crypto");
+    const sessionId = randomUUID();
+    const timestamp = new Date().toISOString();
+    const safeTimestamp = timestamp.replace(/[:.]/g, "-");
+    const cwd = process.env.HOME ?? process.cwd();
+    const safeCwd = cwd.replace(/\//g, "-");
+    const sessionDir = path.join(process.env.HOME ?? "", ".pi", "agent", "sessions", safeCwd);
+    await mkdir(sessionDir, { recursive: true });
+    const sessionFile = path.join(sessionDir, `${safeTimestamp}_${sessionId}.jsonl`);
+    const header = JSON.stringify({ type: "session", version: 1, id: sessionId, cwd, timestamp });
+    await writeFile(sessionFile, header + "\n", "utf-8");
+
+    const session = await readSession(sessionFile);
+    return c.json({
+      sessionId,
+      sessionFile,
+      session,
+    });
+  } catch (error) {
+    return c.json({ error: (error as Error).message ?? "Failed to create session" }, 500);
+  }
+});
+
 app.get("/api/tasks", (c) => {
   try {
     const filter = c.req.query("filter");

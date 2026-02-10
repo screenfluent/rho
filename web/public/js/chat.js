@@ -1614,6 +1614,27 @@ document.addEventListener("alpine:init", () => {
       return Boolean(message?.canFork && this.activeSessionId);
     },
 
+    async newSession() {
+      if (this.isForking) return;
+      this.error = "";
+      this.isForking = true;
+
+      try {
+        const result = await postJson("/api/sessions/new", {});
+        this.activeSessionId = result.sessionId;
+        this.activeRpcSessionId = "";
+        this.activeRpcSessionFile = result.sessionFile;
+        this.promptText = "";
+        this.renderedMessages = [];
+        this.applySession(result.session);
+        await this.loadSessions(false);
+        this.startRpcSession(result.sessionFile);
+      } catch (error) {
+        this.error = error.message ?? "Failed to create session";
+        this.isForking = false;
+      }
+    },
+
     async forkFromLatest() {
       const entryId = this.latestForkPointId();
       if (!entryId) {
@@ -1642,6 +1663,12 @@ document.addEventListener("alpine:init", () => {
         this.applySession(forkResult.session);
         await this.loadSessions(false);
         this.startRpcSession(forkResult.sessionFile);
+
+        // Auto-scroll to bottom after fork
+        this.$nextTick(() => {
+          const thread = this.$refs.chatThread;
+          if (thread) thread.scrollTop = thread.scrollHeight;
+        });
       } catch (error) {
         this.error = error.message ?? "Failed to fork session";
         this.isForking = false;

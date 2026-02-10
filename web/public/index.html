@@ -14,14 +14,14 @@
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css"
     />
-    <link rel="stylesheet" href="/css/style.css?v=20260210b" />
+    <link rel="stylesheet" href="/css/style.css?v=20260210c" />
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
-    <script src="/js/app.js?v=20260210b" defer></script>
-    <script src="/js/chat.js?v=20260210b" defer></script>
-    <script src="/js/files.js?v=20260210b" defer></script>
-    <script src="/js/tasks.js?v=20260210b" defer></script>
+    <script src="/js/app.js?v=20260210c" defer></script>
+    <script src="/js/chat.js?v=20260210c" defer></script>
+    <script src="/js/files.js?v=20260210c" defer></script>
+    <script src="/js/tasks.js?v=20260210c" defer></script>
     <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
   </head>
   <body>
@@ -85,7 +85,10 @@
                 <span class="mobile-panel-toggle-arrow">&#x25BC;</span>
               </button>
               <aside class="chat-sessions" :class="{ collapsed: !showSessionsPanel }">
-                <div class="chat-section-title">Sessions</div>
+                <div class="chat-section-header">
+                  <div class="chat-section-title">Sessions</div>
+                  <button class="btn btn-sm btn-green" type="button" @click="newSession()" :disabled="isForking">+ New</button>
+                </div>
                 <div class="chat-section-meta chat-loading-inline" x-show="isLoadingSessions">
                   <span class="loading-spinner-sm"></span>
                   <span>Loading...</span>
