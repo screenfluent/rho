@@ -1828,7 +1828,7 @@ Instructions:
       const daysSince = (Date.now() - lastTs) / (1000 * 60 * 60 * 24);
       if (daysSince > 1) {
         const ago = lastTs === 0 ? "never" : `${Math.floor(daysSince)}d ago`;
-        ctx.ui.notify(`🧹 Memory consolidation available (last: ${ago}). Run /consolidate`, "info");
+        ctx.ui.notify(`🧹 Memory consolidation available (last: ${ago}). Try /sop:memory-consolidate`, "info");
       }
     }
 
