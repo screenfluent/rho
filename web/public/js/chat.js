@@ -24,6 +24,12 @@ function clampString(value, max) {
   return `${value.slice(0, max)}...`;
 }
 
+function generateOutputPreview(output, maxLen = 80) {
+  if (!output) return '';
+  const oneLine = output.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+  return oneLine.length > maxLen ? oneLine.substring(0, maxLen) + '...' : oneLine;
+}
+
 function extractText(content) {
   if (content == null) {
     return "";
@@ -80,10 +86,13 @@ function normalizeToolCall(item) {
   return {
     type: "tool_call",
     name,
+    toolCallId: item.id ?? item.tool_use_id ?? item.toolUseId ?? "",
     args: argsText,
     argsSummary: clampString(argsText.replace(/\s+/g, " ").trim(), 120),
     output: outputText,
+    outputPreview: generateOutputPreview(outputText),
     status: item.isError ? "error" : item.status ?? "done",
+    duration: item.duration ?? "",
   };
 }
 
@@ -105,15 +114,18 @@ function normalizeContentItem(item) {
   }
 
   if (itemType === "toolCall") {
+    const argsText = safeString(item.arguments ?? {});
     return [
       {
         type: "tool_call",
         name: item.name ?? "tool",
-        args: safeString(item.arguments ?? {}),
-        argsSummary: clampString(safeString(item.arguments ?? {}).replace(/\s+/g, " ").trim(), 120),
+        args: argsText,
+        argsSummary: clampString(argsText.replace(/\s+/g, " ").trim(), 120),
         output: "",
+        outputPreview: "",
         toolCallId: item.id ?? "",
         status: "running",
+        duration: "",
       },
     ];
   }
@@ -123,10 +135,13 @@ function normalizeContentItem(item) {
   }
 
   if (itemType === "tool_result" || itemType === "tool_output" || itemType === "tool_response") {
+    // Tool results are merged into tool_call parts - return empty to skip standalone rendering
+    // The merging happens in normalizeParts after all parts are collected
     return [
       {
         type: "tool_result",
         name: item.name ?? item.tool_name ?? "tool",
+        toolUseId: item.tool_use_id ?? item.toolUseId ?? "",
         output: typeof item.output === "string" ? item.output : safeString(item.output ?? item.result ?? item),
       },
     ];
@@ -191,7 +206,47 @@ function normalizeParts(content) {
     return [{ type: "text", text: content }];
   }
   if (Array.isArray(content)) {
-    return content.flatMap((item) => normalizeContentItem(item));
+    const rawParts = content.flatMap((item) => normalizeContentItem(item));
+    // Merge tool_result into matching tool_call parts
+    const toolCalls = rawParts.filter(p => p.type === "tool_call");
+    const toolResults = rawParts.filter(p => p.type === "tool_result");
+    const otherParts = rawParts.filter(p => p.type !== "tool_call" && p.type !== "tool_result");
+
+    // Match results to calls by toolCallId/toolUseId or by name+position
+    for (const result of toolResults) {
+      let matched = false;
+      // Try to match by ID first
+      if (result.toolUseId) {
+        const call = toolCalls.find(c => c.toolCallId === result.toolUseId && !c.output);
+        if (call) {
+          call.output = result.output;
+          call.outputPreview = generateOutputPreview(result.output);
+          call.status = "done";
+          matched = true;
+        }
+      }
+      // Fallback: match by name (first unmatched call with same name)
+      if (!matched && result.name) {
+        const call = toolCalls.find(c => c.name === result.name && !c.output);
+        if (call) {
+          call.output = result.output;
+          call.outputPreview = generateOutputPreview(result.output);
+          call.status = "done";
+          matched = true;
+        }
+      }
+      // If still not matched, match to any call without output
+      if (!matched) {
+        const call = toolCalls.find(c => !c.output);
+        if (call) {
+          call.output = result.output;
+          call.outputPreview = generateOutputPreview(result.output);
+          call.status = "done";
+        }
+      }
+    }
+    // Return tool_calls and other parts, excluding tool_result (merged into calls)
+    return [...toolCalls, ...otherParts];
   }
 
   if (typeof content === "object") {
@@ -364,28 +419,26 @@ function normalizeMessage(message) {
       };
     }
     if (part.type === "thinking") {
+      const thinkingText = String(part.text ?? "");
       return {
         ...part,
         key: `${message.id}-thinking-${index}`,
-        content: renderMarkdown(String(part.text ?? "")),
+        content: renderMarkdown(thinkingText),
+        preview: generateOutputPreview(thinkingText, 100),
       };
     }
     if (part.type === "tool_call") {
       const args = typeof part.args === "string" ? part.args : safeString(part.args ?? "");
+      const output = typeof part.output === "string" ? part.output : safeString(part.output ?? "");
       return {
         ...part,
         key: `${message.id}-tool-${index}`,
         args,
         argsSummary: part.argsSummary ?? clampString(args, 120),
-        output: typeof part.output === "string" ? part.output : safeString(part.output ?? ""),
+        output,
+        outputPreview: part.outputPreview ?? generateOutputPreview(output),
         status: part.status ?? "done",
-      };
-    }
-    if (part.type === "tool_result") {
-      return {
-        ...part,
-        key: `${message.id}-tool-result-${index}`,
-        output: part.output ?? "",
+        duration: part.duration ?? "",
       };
     }
     if (part.type === "bash") {
@@ -555,6 +608,9 @@ document.addEventListener("alpine:init", () => {
     // Mobile collapsible panel state
     showSessionsPanel: true,
 
+    // Auto-scroll state
+    userScrolledUp: false,
+
     // Chat controls state
     availableModels: [],
     currentModel: null,
@@ -608,6 +664,18 @@ document.addEventListener("alpine:init", () => {
         e.preventDefault();
         this.handlePromptSubmit();
       }
+    },
+
+    handleComposerInput(event) {
+      const el = event.target;
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    },
+
+    handleThreadScroll() {
+      const el = this.$refs.thread;
+      if (!el) return;
+      this.userScrolledUp = el.scrollTop + el.clientHeight < el.scrollHeight - 50;
     },
 
     connectWebSocket() {
@@ -922,6 +990,25 @@ document.addEventListener("alpine:init", () => {
       }
 
       const normalized = normalizeMessage({ ...rawMessage, id: messageId, timestamp: toIsoTimestamp(rawMessage.timestamp) });
+
+      // Skip empty messages
+      if (!normalized.parts || normalized.parts.length === 0) {
+        return;
+      }
+      const hasContent = normalized.parts.some((p) => {
+        if (p.type === 'text') return Boolean(p.content);
+        if (p.type === 'thinking') return Boolean(p.content);
+        if (p.type === 'tool_call') return Boolean(p.name || p.args);
+        if (p.type === 'tool_result') return Boolean(p.output);
+        if (p.type === 'bash') return Boolean(p.command || p.output);
+        if (p.type === 'error') return Boolean(p.text);
+        if (p.type === 'compaction' || p.type === 'summary' || p.type === 'retry') return Boolean(p.summary);
+        return true;
+      });
+      if (!hasContent) {
+        return;
+      }
+
       const idx = this.renderedMessages.findIndex((item) => item.id === messageId);
       if (idx >= 0) {
         this.renderedMessages[idx] = normalized;
@@ -1098,7 +1185,10 @@ document.addEventListener("alpine:init", () => {
           args: "",
           argsSummary: "",
           output: "",
+          outputPreview: "",
           status: "running",
+          duration: "",
+          startTime: Date.now(),
         }));
         return;
       }
@@ -1115,7 +1205,10 @@ document.addEventListener("alpine:init", () => {
           args: "",
           argsSummary: "",
           output: "",
+          outputPreview: "",
           status: "running",
+          duration: "",
+          startTime: Date.now(),
         }));
 
         const fullToolCall =
@@ -1151,8 +1244,11 @@ document.addEventListener("alpine:init", () => {
         args: argsText,
         argsSummary: clampString(argsText.replace(/\s+/g, " ").trim(), 120),
         output: "",
+        outputPreview: "",
         status: "running",
         toolCallId,
+        duration: "",
+        startTime: Date.now(),
       }));
 
       part.name = event.toolName ?? part.name ?? "tool";
@@ -1160,6 +1256,7 @@ document.addEventListener("alpine:init", () => {
       part.argsSummary = clampString(argsText.replace(/\s+/g, " ").trim(), 120);
       part.status = "running";
       part.toolCallId = toolCallId;
+      part.startTime = Date.now();
 
       this.toolCallPartById.set(toolCallId, { messageId: message.id, key });
       this.scrollThreadToBottom();
@@ -1193,7 +1290,9 @@ document.addEventListener("alpine:init", () => {
       }
 
       part.status = "running";
-      part.output = extractToolOutput(event.partialResult);
+      const output = extractToolOutput(event.partialResult);
+      part.output = output;
+      part.outputPreview = generateOutputPreview(output);
       this.scrollThreadToBottom();
     },
 
@@ -1212,8 +1311,21 @@ document.addEventListener("alpine:init", () => {
         return;
       }
 
-      part.status = event.isError ? "error" : "success";
-      part.output = extractToolOutput(event.result);
+      part.status = event.isError ? "error" : "done";
+      const output = extractToolOutput(event.result);
+      part.output = output;
+      part.outputPreview = generateOutputPreview(output);
+
+      // Calculate duration
+      if (part.startTime) {
+        const elapsed = Date.now() - part.startTime;
+        if (elapsed >= 1000) {
+          part.duration = `${(elapsed / 1000).toFixed(1)}s`;
+        } else {
+          part.duration = `${elapsed}ms`;
+        }
+      }
+
       this.scrollThreadToBottom();
     },
 
@@ -1272,6 +1384,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     scrollThreadToBottom() {
+      if (this.userScrolledUp) return;
       const thread = this.$refs.thread;
       if (!thread) {
         return;
@@ -1352,7 +1465,36 @@ document.addEventListener("alpine:init", () => {
 
     applySession(session) {
       this.activeSession = session;
-      this.renderedMessages = (session.messages ?? []).map(normalizeMessage);
+
+      // Normalize messages, filter empty ones, and deduplicate by ID
+      const seenIds = new Set();
+      this.renderedMessages = (session.messages ?? [])
+        .map(normalizeMessage)
+        .filter((msg) => {
+          // Skip empty messages (no parts or all parts empty)
+          if (!msg.parts || msg.parts.length === 0) {
+            return false;
+          }
+          const hasContent = msg.parts.some((p) => {
+            if (p.type === 'text') return Boolean(p.content);
+            if (p.type === 'thinking') return Boolean(p.content);
+            if (p.type === 'tool_call') return Boolean(p.name || p.args);
+            if (p.type === 'tool_result') return Boolean(p.output);
+            if (p.type === 'bash') return Boolean(p.command || p.output);
+            if (p.type === 'error') return Boolean(p.text);
+            if (p.type === 'compaction' || p.type === 'summary' || p.type === 'retry') return Boolean(p.summary);
+            return true; // Unknown part types pass through
+          });
+          if (!hasContent) {
+            return false;
+          }
+          // Deduplicate by ID
+          if (seenIds.has(msg.id)) {
+            return false;
+          }
+          seenIds.add(msg.id);
+          return true;
+        });
 
       this.$nextTick(() => {
         highlightCodeBlocks(this.$refs.thread);
@@ -1474,6 +1616,17 @@ document.addEventListener("alpine:init", () => {
       this.isSendingPrompt = true;
       this.promptText = "";
       this.streamMessageId = "";
+
+      // Add user message locally before sending to RPC
+      this.renderedMessages.push({
+        id: `local-user-${Date.now()}`,
+        role: 'user',
+        roleLabel: 'USER',
+        timestamp: new Date().toLocaleString(),
+        parts: [{ type: 'text', render: 'text', content: message, key: `text-0` }],
+        canFork: true,
+      });
+      this.scrollThreadToBottom();
 
       const sent = this.sendWs({
         type: "rpc_command",

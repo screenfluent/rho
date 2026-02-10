@@ -126,6 +126,10 @@
                     <div class="chat-thread-title" x-text="activeSession ? sessionLabel(activeSession) : 'Select a session'"></div>
                     <div class="chat-thread-meta" x-show="activeSession" x-text="messageCountLabel(activeSession)"></div>
                   </div>
+                  <div class="chat-thread-status">
+                    <span class="chat-live-badge" x-show="isForkActive()">● LIVE</span>
+                    <span class="chat-readonly-badge" x-show="!isForkActive() && activeSession">READ-ONLY</span>
+                  </div>
                   <div class="chat-thread-actions">
                     <button
                       class="btn btn-ghost"
@@ -133,7 +137,8 @@
                       @click="forkFromLatest()"
                       :disabled="!activeSession || !hasForkPoints() || isForking"
                     >
-                      Fork from latest
+                      <span x-show="!isForking">Fork from latest</span>
+                      <span x-show="isForking">Forking...</span>
                     </button>
                   </div>
                 </div>
@@ -147,7 +152,7 @@
                   </button>
                 </div>
 
-                <div class="chat-thread-body" x-ref="thread">
+                <div class="chat-thread-body" x-ref="thread" @scroll="handleThreadScroll()">
                   <div class="chat-loading" x-show="isLoadingSession">
                     <span class="loading-spinner"></span>
                     <span>Loading session...</span>
@@ -161,6 +166,13 @@
                     <span>Select a session from the sidebar to view messages.</span>
                   </div>
 
+                  <!-- Typing indicator during streaming -->
+                  <div class="chat-typing" x-show="isStreaming" x-cloak>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                  </div>
+
                   <template x-for="message in renderedMessages" :key="message.id">
                     <article class="chat-message" :class="message.role">
                       <div class="chat-message-meta">
@@ -169,7 +181,7 @@
                           <button
                             class="chat-fork-button"
                             type="button"
-                            x-show="canForkMessage(message)"
+                            x-show="message.role === 'user' && canForkMessage(message)"
                             @click="forkFromEntry(message.id)"
                             :title="messageForkPreview(message)"
                           >
@@ -190,34 +202,29 @@
                             <template x-if="part.type === 'thinking'">
                               <div class="chat-block thinking" x-data="{ open: false }">
                                 <button class="chat-block-toggle" type="button" @click="open = !open">
+                                  <span class="thinking-icon">💭</span>
                                   Thinking
-                                  <span class="chat-block-hint" x-text="open ? 'hide' : 'show'"></span>
+                                  <span class="tool-chevron" x-text="open ? '▾' : '▸'"></span>
                                 </button>
+                                <div class="thinking-preview" x-show="!open" x-text="part.preview"></div>
                                 <div class="chat-block-body" x-show="open" x-html="part.content"></div>
                               </div>
                             </template>
                             <template x-if="part.type === 'tool_call'">
                               <div class="chat-block tool" x-data="{ open: false }">
                                 <button class="chat-block-toggle" type="button" @click="open = !open">
-                                  Tool · <span x-text="part.name"></span>
-                                  <span class="chat-block-hint" :class="part.status" x-text="part.status === 'running' ? 'running' : part.status === 'error' ? 'error' : part.argsSummary"></span>
+                                  <span class="tool-status-icon" :class="part.status" x-text="part.status === 'running' ? '⟳' : part.status === 'error' ? '✗' : '✓'"></span>
+                                  <span class="tool-name" x-text="part.name"></span>
+                                  <span class="tool-args-hint" x-text="part.argsSummary"></span>
+                                  <span class="tool-duration" x-show="part.duration" x-text="part.duration"></span>
+                                  <span class="tool-chevron" x-text="open ? '▾' : '▸'"></span>
                                 </button>
+                                <div class="tool-preview" x-show="!open && part.outputPreview" x-text="part.outputPreview"></div>
                                 <div class="chat-block-body" x-show="open">
                                   <div class="chat-block-label">args</div>
                                   <pre><code x-text="part.args"></code></pre>
                                   <div class="chat-block-label" x-show="part.output">output</div>
                                   <pre x-show="part.output"><code x-text="part.output"></code></pre>
-                                </div>
-                              </div>
-                            </template>
-                            <template x-if="part.type === 'tool_result'">
-                              <div class="chat-block tool-result" x-data="{ open: false }">
-                                <button class="chat-block-toggle" type="button" @click="open = !open">
-                                  Tool result · <span x-text="part.name"></span>
-                                  <span class="chat-block-hint" x-text="open ? 'hide' : 'show'"></span>
-                                </button>
-                                <div class="chat-block-body" x-show="open">
-                                  <pre><code x-text="part.output"></code></pre>
                                 </div>
                               </div>
                             </template>
@@ -310,6 +317,7 @@
                     rows="2"
                     :disabled="isSendingPrompt || isForking"
                     @keydown="handleComposerKeydown($event)"
+                    @input="handleComposerInput($event)"
                   ></textarea>
                   <div class="chat-composer-actions">
                     <button
@@ -325,6 +333,9 @@
                     <button class="btn" type="submit" :disabled="!promptText.trim() || isSendingPrompt || isForking">
                       <span x-text="submitButtonLabel()"></span>
                     </button>
+                  </div>
+                  <div class="chat-composer-hints" x-show="isForkActive()">
+                    Enter to send · Shift+Enter for newline
                   </div>
                 </form>
 

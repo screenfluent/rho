@@ -586,6 +586,32 @@ button { font: inherit; }
   color: var(--text-muted);
 }
 
+.chat-thread-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-live-badge {
+  color: var(--green);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.chat-readonly-badge {
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
 .chat-thread-body {
   display: flex;
   flex-direction: column;
@@ -645,10 +671,23 @@ button { font: inherit; }
   text-transform: uppercase;
   letter-spacing: 0.09em;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-message:hover .chat-fork-button {
+  opacity: 1;
 }
 
 .chat-fork-button:hover {
   border-color: var(--yellow);
+}
+
+/* On touch devices, always show fork buttons */
+@media (hover: none) {
+  .chat-fork-button {
+    opacity: 1;
+  }
 }
 
 .chat-message-role {
@@ -698,9 +737,66 @@ button { font: inherit; }
   color: var(--cyan);
 }
 
-.chat-block.tool,
-.chat-block.tool-result {
+.chat-block.tool {
   border-color: rgba(251, 191, 36, 0.4);
+}
+
+/* Unified tool block styles */
+.tool-status-icon { margin-right: 0.35rem; }
+.tool-status-icon.running { color: var(--yellow); }
+.tool-status-icon.done, .tool-status-icon.success { color: var(--green); }
+.tool-status-icon.error { color: var(--red); }
+.tool-name { color: var(--text); }
+.tool-args-hint { color: var(--text-muted); font-size: 0.65rem; margin-left: 0.5rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-duration { color: var(--text-dim); font-size: 0.6rem; margin-left: auto; }
+.tool-chevron { color: var(--text-dim); margin-left: 0.5rem; }
+.tool-preview {
+  padding: 0.3rem 0.5rem 0.3rem 1.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Thinking block styles */
+.thinking-icon { margin-right: 0.35rem; }
+.thinking-preview {
+  padding: 0.3rem 0.5rem 0.3rem 1.5rem;
+  font-size: 0.7rem;
+  color: var(--cyan);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Typing indicator */
+.chat-typing {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.5rem 1rem;
+  align-items: center;
+}
+.typing-dot {
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* Composer hints */
+.chat-composer-hints {
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  padding-top: 0.25rem;
+  grid-column: 1 / -1;
 }
 
 .chat-block.bash {
@@ -715,8 +811,8 @@ button { font: inherit; }
   text-align: left;
   font-size: 0.75rem;
   display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.25rem;
   cursor: pointer;
 }
 
