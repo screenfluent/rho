@@ -7,6 +7,7 @@ export interface SessionSummary {
   id: string;
   file: string;
   name?: string;
+  firstPrompt?: string;
   cwd: string;
   timestamp: string;
   parentSession?: string;
@@ -117,6 +118,7 @@ export async function listSessions(cwd?: string, sessionDir = DEFAULT_SESSION_DI
         id: info.id,
         file,
         name: info.name,
+        firstPrompt: info.firstPrompt,
         cwd: info.cwd,
         timestamp: info.timestamp,
         parentSession: info.parentSession,
