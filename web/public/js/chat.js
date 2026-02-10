@@ -391,6 +391,26 @@ function formatTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function formatTimestampShort(value) {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value);
+  }
+  const now = new Date();
+  const diffMs = now - parsed;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 function renderMarkdown(text) {
   if (!text) {
     return "";
