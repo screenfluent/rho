@@ -19,7 +19,7 @@ import { findSessionFileById, listSessions, readSession } from "./session-reader
 import { createTask, deleteTask, listAllTasks, updateTask } from "./task-api.ts";
 
 const app = new Hono();
-const publicDir = path.resolve(process.cwd(), "web/public");
+const publicDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), "public");
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 export { injectWebSocket };
 

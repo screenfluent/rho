@@ -184,6 +184,37 @@ Options:
     }
   }
 
+  // ---- 7b. Install npm dependencies for dev-mode (git checkout) ----
+  // When running from a local clone, new deps added to package.json won't
+  // exist until `npm install` runs. End-users who install via npm get this
+  // for free, but dev-mode users (git pull) need it here.
+  const rhoRoot = resolveRhoRootOnDisk();
+  if (fs.existsSync(path.join(rhoRoot, ".git")) && fs.existsSync(path.join(rhoRoot, "package.json"))) {
+    const nodeModulesOk = fs.existsSync(path.join(rhoRoot, "node_modules"));
+    const pkgJson = JSON.parse(fs.readFileSync(path.join(rhoRoot, "package.json"), "utf-8"));
+    const declaredDeps = Object.keys(pkgJson.dependencies || {});
+    const missingDeps = declaredDeps.some(
+      (dep) => !fs.existsSync(path.join(rhoRoot, "node_modules", dep))
+    );
+    if (!nodeModulesOk || missingDeps) {
+      if (verbose) console.log("  Installing npm dependencies (dev mode)...");
+      const r = spawnSync("npm", ["install"], {
+        cwd: rhoRoot,
+        stdio: verbose ? "inherit" : "pipe",
+        encoding: "utf-8",
+      });
+      if (r.status !== 0) {
+        console.error("Warning: npm install failed in dev checkout");
+        if (!verbose) {
+          const msg = (r.stderr || r.stdout || "").trim();
+          if (msg) console.error(msg);
+        }
+      } else if (verbose) {
+        console.log("  npm dependencies installed.");
+      }
+    }
+  }
+
   // ---- 8. Re-read settings.json after pi install/remove ----
   const settingsJsonAfter = readJsonFile(SETTINGS_PATH);
 
