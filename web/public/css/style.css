@@ -1818,6 +1818,7 @@ button { font: inherit; }
   .chat-sessions,
   .files-panel {
     max-height: none;
+    min-height: auto;
   }
 
   .chat-sessions .chat-list,
