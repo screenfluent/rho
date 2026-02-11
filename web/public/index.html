@@ -524,6 +524,9 @@
                 <button class="memory-filter-btn" :class="{ active: typeFilter === 'reminder' }" type="button" @click="setType('reminder')">Reminder</button>
               </div>
               <div class="memory-filters-right">
+                <button class="memory-add-btn" type="button" @click="toggleAddForm()">
+                  <span x-text="showAddForm ? '✕ Cancel' : '+ Add entry'"></span>
+                </button>
                 <select class="memory-category-select" x-model="categoryFilter" @change="load()">
                   <option value="">all categories</option>
                   <template x-for="cat in stats.categories" :key="cat">
@@ -536,6 +539,34 @@
                   <option value="used">most used</option>
                   <option value="alpha">a-z</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Add entry form -->
+            <div class="memory-add-form" x-show="showAddForm" x-cloak>
+              <div class="memory-add-form-row">
+                <select class="memory-add-type-select" x-model="newEntryType">
+                  <option value="learning">Learning</option>
+                  <option value="preference">Preference</option>
+                  <option value="behavior">Behavior</option>
+                </select>
+                <input
+                  class="memory-add-category-input"
+                  type="text"
+                  placeholder="category"
+                  x-model="newEntryCategory"
+                  x-show="newEntryType === 'preference'"
+                />
+              </div>
+              <textarea
+                class="memory-add-textarea"
+                placeholder="Entry text... (for behavior: prefix with do: / don't: / value:)"
+                x-model="newEntryText"
+                rows="2"
+              ></textarea>
+              <div class="memory-add-form-actions">
+                <button class="btn btn-sm" type="button" @click="addEntry()" :disabled="!newEntryText.trim()">Save</button>
+                <button class="btn btn-sm btn-ghost" type="button" @click="toggleAddForm()">Cancel</button>
               </div>
             </div>
 
@@ -570,26 +601,48 @@
 
             <div class="memory-list" x-show="!isLoading && entries.length > 0">
               <template x-for="entry in displayEntries" :key="entry.id">
-                <div class="memory-card" :class="[entry.type, isStale(entry) ? 'stale' : '', entry.status === 'done' ? 'done' : '']">
+                <div class="memory-card" :class="[entry.type, isStale(entry) ? 'stale' : '', entry.status === 'done' ? 'done' : '', editingId === entry.id ? 'editing' : '']">
                   <div class="memory-card-header">
                     <div class="memory-card-badges">
                       <label class="task-checkbox" x-show="entry.type === 'task'" @click.stop>
                         <input type="checkbox" :checked="entry.status === 'done'" @change="toggleTask(entry)" />
                       </label>
                       <span class="memory-type-badge" :class="entry.type" x-text="entry.type"></span>
-                      <span class="memory-category-badge" x-show="entry.category" x-text="entry.category"></span>
-                      <span class="memory-category-badge" x-show="entry.key" x-text="entry.key"></span>
-                      <span class="memory-category-badge" x-show="entry.status" x-text="entry.status"></span>
-                      <span class="memory-category-badge" x-show="entry.enabled !== undefined" x-text="entry.enabled ? 'on' : 'off'"></span>
+                      <span class="memory-category-badge" x-show="entry.category && editingId !== entry.id" x-text="entry.category"></span>
+                      <span class="memory-category-badge" x-show="entry.key && editingId !== entry.id" x-text="entry.key"></span>
+                      <span class="memory-category-badge" x-show="entry.status && editingId !== entry.id" x-text="entry.status"></span>
+                      <span class="memory-category-badge" x-show="entry.enabled !== undefined && editingId !== entry.id" x-text="entry.enabled ? 'on' : 'off'"></span>
+                      <input
+                        class="memory-edit-category-input"
+                        type="text"
+                        x-model="editCategory"
+                        placeholder="category"
+                        x-show="editingId === entry.id && entry.type === 'preference'"
+                      />
                     </div>
                     <div class="memory-card-meta-right">
                       <span class="memory-card-date" x-show="entry.due">due <span x-text="entry.due"></span></span>
                       <span class="memory-card-date" x-text="entry.created || '--'"></span>
-                      <button class="memory-delete-btn" type="button" @click="entry.type === 'task' ? removeTask(entry) : remove(entry)" title="Delete entry">&times;</button>
+                      <button class="memory-edit-btn" type="button" @click="startEdit(entry)" title="Edit entry" x-show="editingId !== entry.id">✏</button>
+                      <button class="memory-delete-btn" type="button" @click="entry.type === 'task' ? removeTask(entry) : remove(entry)" title="Delete entry" x-show="editingId !== entry.id">&times;</button>
                     </div>
                   </div>
-                  <div class="memory-card-text" x-text="cardText(entry)"></div>
-                  <div class="memory-card-footer">
+                  <!-- Normal view -->
+                  <div class="memory-card-text" x-show="editingId !== entry.id" x-text="cardText(entry)"></div>
+                  <!-- Edit view -->
+                  <div x-show="editingId === entry.id">
+                    <textarea
+                      class="memory-edit-textarea"
+                      x-model="editText"
+                      rows="3"
+                      @keydown.escape="cancelEdit()"
+                    ></textarea>
+                    <div class="memory-edit-actions">
+                      <button class="btn btn-sm" type="button" @click="saveEdit(entry)" :disabled="!editText.trim()">Save</button>
+                      <button class="btn btn-sm btn-ghost" type="button" @click="cancelEdit()">Cancel</button>
+                    </div>
+                  </div>
+                  <div class="memory-card-footer" x-show="editingId !== entry.id">
                     <span class="memory-card-usage" x-show="entry.used > 0">
                       used <span x-text="entry.used"></span>x
                     </span>

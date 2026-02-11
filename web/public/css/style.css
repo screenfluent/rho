@@ -2266,6 +2266,180 @@ button { font: inherit; }
   text-align: center;
 }
 
+/* ── Add-entry button ── */
+
+.memory-add-btn {
+  border: 1px solid var(--green-dim);
+  background: transparent;
+  color: var(--green);
+  padding: 0.3rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.memory-add-btn:hover {
+  background: var(--green);
+  color: var(--bg);
+}
+
+/* ── Add-entry form ── */
+
+.memory-add-form {
+  border: 1px solid var(--green-dim);
+  background: var(--bg-alt);
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.memory-add-form-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.memory-add-type-select {
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+.memory-add-type-select:focus {
+  outline: none;
+  border-color: var(--green-dim);
+}
+
+.memory-add-category-input {
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 0.35rem 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  flex: 1;
+}
+
+.memory-add-category-input:focus {
+  outline: none;
+  border-color: var(--green-dim);
+}
+
+.memory-add-category-input::placeholder {
+  color: var(--text-dim);
+}
+
+.memory-add-textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+  caret-color: var(--green);
+}
+
+.memory-add-textarea:focus {
+  outline: none;
+  border-color: var(--green-dim);
+}
+
+.memory-add-textarea::placeholder {
+  color: var(--text-dim);
+}
+
+.memory-add-form-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+/* ── Edit button (pencil) ── */
+
+.memory-edit-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.memory-card:hover .memory-edit-btn {
+  opacity: 1;
+}
+
+.memory-edit-btn:hover {
+  color: var(--cyan);
+}
+
+/* ── Editing card highlight ── */
+
+.memory-card.editing {
+  border-color: var(--green-dim);
+  border-left-color: var(--green);
+}
+
+/* ── Inline edit textarea ── */
+
+.memory-edit-textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  padding: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  resize: vertical;
+  caret-color: var(--green);
+  margin-top: 0.25rem;
+}
+
+.memory-edit-textarea:focus {
+  outline: none;
+  border-color: var(--green-dim);
+}
+
+.memory-edit-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+}
+
+/* ── Inline edit category input ── */
+
+.memory-edit-category-input {
+  background: var(--bg);
+  border: 1px solid var(--border-bright);
+  color: var(--yellow);
+  padding: 0.08rem 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  width: 8rem;
+}
+
+.memory-edit-category-input:focus {
+  outline: none;
+  border-color: var(--green-dim);
+}
+
 @media (max-width: 720px) {
   .memory-stats {
     gap: 1rem;
@@ -2293,8 +2467,13 @@ button { font: inherit; }
     max-height: none;
   }
 
-  .memory-delete-btn {
+  .memory-delete-btn,
+  .memory-edit-btn {
     opacity: 1;
+  }
+
+  .memory-add-form-row {
+    flex-wrap: wrap;
   }
 }
 
