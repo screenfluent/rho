@@ -1212,6 +1212,15 @@ Remove: \`brain action=remove id=<id> reason="..."\`
 Reminders: cadence is \`{"kind":"interval","every":"30m"}\` or \`{"kind":"daily","at":"08:00"}\`. Process with: \`brain action=reminder_run id=<id> result=ok|error|skipped\`. On error add: \`error="msg"\`.
 Tasks: \`brain action=task_done id=<id>\`, \`brain action=task_clear\` (removes done).`);
 
+  // ── Approach Hierarchy ──
+  sections.push(`## Approach Hierarchy
+
+Prefer the simplest mechanism that works:
+1. Brain entry (reminder, task, learning) — for recurring or one-off work
+2. Skill or SOP — for multi-step runbooks
+3. Bash command — for immediate system actions
+4. Code change — only when the above can't do the job`);
+
   return sections.join("\n\n");
 }
 
@@ -1479,7 +1488,7 @@ export default function (pi: ExtensionAPI) {
         // Cross-process trigger requests.
         const trig = consumeHeartbeatTrigger(hbTriggerSeenMtimeMs);
         hbTriggerSeenMtimeMs = trig.nextSeen;
-        if (trig.triggered) triggerCheck(liveCtx);
+        if (trig.triggered) triggerCheck(liveCtx, { force: true });
         return;
       }
 
@@ -1768,9 +1777,11 @@ export default function (pi: ExtensionAPI) {
     updateStatusLine(ctx);
   };
 
-  const triggerCheck = (ctx: ExtensionContext) => {
+  const triggerCheck = (ctx: ExtensionContext, options?: { force?: boolean }) => {
     if (!ctx.hasUI) return;
     if (!verifyHeartbeatLeadership(ctx)) return;
+
+    const force = options?.force ?? false;
 
     hbState.lastCheckAt = Date.now();
     hbState.checkCount++;
@@ -1782,14 +1793,15 @@ export default function (pi: ExtensionAPI) {
     const now = new Date();
     const dueReminders = brain.reminders.filter(r => {
       if (!r.enabled) return false;
+      if (force) return true; // force: include all active reminders
       if (!r.next_due) return true; // never run → due immediately
       return new Date(r.next_due) <= now;
     });
 
     const pendingTasks = brain.tasks.filter(t => t.status === "pending");
 
-    // Skip if nothing to do
-    if (dueReminders.length === 0 && pendingTasks.length === 0) {
+    // Skip if nothing to do (only for scheduled checks, not forced)
+    if (!force && dueReminders.length === 0 && pendingTasks.length === 0) {
       if (ctx.hasUI) ctx.ui.notify("ρ: skipped (nothing to do)", "info");
       scheduleNext(ctx);
       return;
@@ -1822,16 +1834,16 @@ export default function (pi: ExtensionAPI) {
       }).join("\n");
     }
 
-    const fullPrompt = `You are rho performing a scheduled check-in.
+    const fullPrompt = `You are rho performing a ${force ? "manual" : "scheduled"} check-in.
 
-## Due Reminders
+## ${force ? "Active" : "Due"} Reminders
 ${remindersSection}
 
 ## Pending Tasks
 ${tasksSection}
 
 Instructions:
-- Execute each due reminder. Use the brain tool's reminder_run action to record results.
+- Execute each ${force ? "" : "due "}reminder. Use the brain tool's reminder_run action to record results.
 - Review pending tasks and act on any that are actionable.
 - If nothing needs attention, respond with RHO_OK.`;
 
@@ -2266,7 +2278,7 @@ Instructions:
               const leaderText = hbLockOwnerPid ? ` (leader pid ${hbLockOwnerPid})` : "";
               return { content: [{ type: "text", text: `Requested rho check-in${leaderText}` }], details: { action: "trigger", wasTriggered: false } as RhoDetails };
             }
-            triggerCheck(ctx);
+            triggerCheck(ctx, { force: true });
             return { content: [{ type: "text", text: "Rho check-in triggered" }], details: { action: "trigger", wasTriggered: true, lastCheckAt: hbState.lastCheckAt, checkCount: hbState.checkCount } as RhoDetails };
 
           case "interval": {
@@ -2739,7 +2751,7 @@ Instructions:
               ctx.ui.notify(`Requested rho check-in${leaderText}`, "info");
               break;
             }
-            triggerCheck(ctx);
+            triggerCheck(ctx, { force: true });
             ctx.ui.notify("Rho check-in triggered", "success");
             break;
           case "interval": {
