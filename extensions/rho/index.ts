@@ -1166,7 +1166,6 @@ function buildMetaPrompt(opts: MetaPromptOptions): string {
   const platform = detectPlatform();
   const arch = os.arch();
   const shell = process.env.SHELL ? path.basename(process.env.SHELL) : "bash";
-  const modelId = ctx.model?.id ?? "unknown";
   const mode = isSubagent ? "subagent" : "interactive";
 
   const runtimeLines = [
@@ -1178,7 +1177,6 @@ function buildMetaPrompt(opts: MetaPromptOptions): string {
     `- **Home**: ${HOME}`,
     `- **Brain**: ~/.rho/brain/brain.jsonl`,
     `- **Vault**: ~/.rho/vault (${vaultNoteCount} notes)`,
-    `- **Model**: ${modelId}`,
     `- **Mode**: ${mode}`,
   ];
 
