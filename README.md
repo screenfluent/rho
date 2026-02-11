@@ -14,13 +14,7 @@ Built on [pi coding agent](https://github.com/badlogic/pi-mono).
 
 ### Install with your agent
 
-If you already have a coding agent running, give it the [`SKILL.md`](SKILL.md) install runbook:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/mikeyobrien/rho/main/SKILL.md -o /tmp/install-rho.md
-```
-
-Then ask your agent to read it and follow the steps. Works with Claude Code, Codex, pi, or any agent that can run shell commands.
+Ask your coding agent to fetch and follow the [install runbook](https://raw.githubusercontent.com/mikeyobrien/rho/main/SKILL.md).
 
 ### npm
 
