@@ -1212,6 +1212,12 @@ Remove: \`brain action=remove id=<id> reason="..."\`
 Reminders: cadence is \`{"kind":"interval","every":"30m"}\` or \`{"kind":"daily","at":"08:00"}\`. Process with: \`brain action=reminder_run id=<id> result=ok|error|skipped\`. On error add: \`error="msg"\`.
 Tasks: \`brain action=task_done id=<id>\`, \`brain action=task_clear\` (removes done).`);
 
+  // ── Brain vs Vault ──
+  sections.push(`## Brain vs Vault
+
+Brain: short durable facts, preferences, corrections (<200 chars). High-frequency, auto-injected every session.
+Vault: longer reference material, concepts, research, linked knowledge. Searched on demand.`);
+
   // ── Approach Hierarchy ──
   sections.push(`## Approach Hierarchy
 
