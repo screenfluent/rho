@@ -1364,6 +1364,14 @@ export default function (pi: ExtensionAPI) {
     return count > 0 ? `mem:${count}` : "";
   };
 
+  const formatVaultCount = (): string => {
+    try {
+      return `vault:${vaultGraph.size}`;
+    } catch {
+      return "";
+    }
+  };
+
   const setRhoFooter = (ctx: ExtensionContext): void => {
     if (!CUSTOM_FOOTER_ENABLED) return;
     if (!ctx.hasUI) return;
@@ -1390,8 +1398,9 @@ export default function (pi: ExtensionAPI) {
 
           const usage = formatUsageBars();
           const mem = formatMemoryCount();
+          const vlt = formatVaultCount();
           const rhoRole = formatRhoRole();
-          const rightPlain = [usage, mem, rhoRole].filter(Boolean).join("  ");
+          const rightPlain = [usage, mem, vlt, rhoRole].filter(Boolean).join("  ");
           const right = theme.fg("dim", rightPlain);
 
           const spaces = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
