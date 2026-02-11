@@ -10,6 +10,17 @@ document.addEventListener("alpine:init", () => {
     isLoading: false,
     error: "",
 
+    // Edit state
+    editingId: null,
+    editText: "",
+    editCategory: "",
+
+    // Add-entry state
+    showAddForm: false,
+    newEntryType: "learning",
+    newEntryText: "",
+    newEntryCategory: "",
+
     async init() {
       console.log('[rho-memory] init called');
       await this.load();
@@ -78,6 +89,80 @@ document.addEventListener("alpine:init", () => {
       if (!entry.last_used) return false;
       const days = (Date.now() - new Date(entry.last_used).getTime()) / 86400000;
       return days > 14;
+    },
+
+    // ── Edit methods ──
+
+    startEdit(entry) {
+      this.editingId = entry.id;
+      this.editText = entry.text;
+      this.editCategory = entry.category || "";
+    },
+
+    cancelEdit() {
+      this.editingId = null;
+      this.editText = "";
+      this.editCategory = "";
+    },
+
+    async saveEdit(entry) {
+      if (!this.editText.trim()) return;
+      try {
+        const body = { text: this.editText.trim() };
+        if (entry.type === "preference") {
+          body.category = this.editCategory.trim() || entry.category;
+        }
+        const res = await fetch(`/api/memory/${encodeURIComponent(entry.id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Update failed");
+        }
+        this.cancelEdit();
+        await this.load();
+      } catch (err) {
+        this.error = err.message || "Failed to update entry";
+      }
+    },
+
+    // ── Add-entry methods ──
+
+    toggleAddForm() {
+      this.showAddForm = !this.showAddForm;
+      if (!this.showAddForm) {
+        this.newEntryType = "learning";
+        this.newEntryText = "";
+        this.newEntryCategory = "";
+      }
+    },
+
+    async addEntry() {
+      if (!this.newEntryText.trim()) return;
+      try {
+        const body = { type: this.newEntryType, text: this.newEntryText.trim() };
+        if (this.newEntryType === "preference") {
+          body.category = this.newEntryCategory.trim() || "General";
+        }
+        const res = await fetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Create failed");
+        }
+        this.showAddForm = false;
+        this.newEntryType = "learning";
+        this.newEntryText = "";
+        this.newEntryCategory = "";
+        await this.load();
+      } catch (err) {
+        this.error = err.message || "Failed to add entry";
+      }
     },
 
     async remove(entry) {

@@ -366,6 +366,95 @@ app.get("/api/memory", async (c) => {
   }
 });
 
+app.put("/api/memory/:id", async (c) => {
+  const entryId = c.req.param("id");
+  try {
+    let body: { text?: string; category?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    if (!body.text || typeof body.text !== "string" || !body.text.trim()) {
+      return c.json({ error: "text is required" }, 400);
+    }
+
+    const { entries } = readBrain(BRAIN_PATH);
+    const brain = foldBrain(entries);
+    const allMemory = [...brain.learnings, ...brain.preferences];
+    const target = allMemory.find(e => e.id === entryId);
+    if (!target) return c.json({ error: "Entry not found" }, 404);
+
+    // Build updated entry preserving all original fields
+    const updated = { ...target, text: body.text.trim(), created: new Date().toISOString() };
+    if (body.category !== undefined && target.type === "preference") {
+      (updated as any).category = body.category;
+    }
+
+    await appendBrainEntry(BRAIN_PATH, updated as any);
+    return c.json({ status: "ok", entry: updated });
+  } catch (error) {
+    return c.json({ error: (error as Error).message ?? "Failed to update entry" }, 500);
+  }
+});
+
+app.post("/api/memory", async (c) => {
+  try {
+    let body: { type?: string; text?: string; category?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const entryType = body.type;
+    const text = body.text?.trim();
+
+    if (!text) return c.json({ error: "text is required" }, 400);
+    if (!entryType || !["learning", "preference", "behavior", "context"].includes(entryType)) {
+      return c.json({ error: "type must be one of: learning, preference, behavior, context" }, 400);
+    }
+
+    const id = crypto.randomUUID().slice(0, 8);
+    const created = new Date().toISOString();
+    let entry: any;
+
+    switch (entryType) {
+      case "learning":
+        entry = { id, type: "learning", text, source: "web-ui", created };
+        break;
+      case "preference":
+        entry = { id, type: "preference", text, category: body.category?.trim() || "General", created };
+        break;
+      case "behavior": {
+        // Parse do/dont/values from text
+        let category: "do" | "dont" | "value" = "do";
+        let cleanText = text;
+        if (text.toLowerCase().startsWith("don't:") || text.toLowerCase().startsWith("dont:")) {
+          category = "dont";
+          cleanText = text.replace(/^don'?t:\s*/i, "");
+        } else if (text.toLowerCase().startsWith("do:")) {
+          category = "do";
+          cleanText = text.replace(/^do:\s*/i, "");
+        } else if (text.toLowerCase().startsWith("value:") || text.toLowerCase().startsWith("values:")) {
+          category = "value";
+          cleanText = text.replace(/^values?:\s*/i, "");
+        }
+        entry = { id, type: "behavior", category, text: cleanText, created };
+        break;
+      }
+      case "context":
+        return c.json({ error: "Context entries require project and path fields; use the CLI instead" }, 400);
+    }
+
+    await appendBrainEntry(BRAIN_PATH, entry);
+    return c.json({ status: "ok", entry });
+  } catch (error) {
+    return c.json({ error: (error as Error).message ?? "Failed to create entry" }, 500);
+  }
+});
+
 app.delete("/api/memory/:id", async (c) => {
   const entryId = c.req.param("id");
   try {
