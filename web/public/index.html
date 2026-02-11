@@ -20,9 +20,9 @@
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
     <script src="/js/app.js?v=20260210v" defer></script>
     <script src="/js/chat.js?v=20260210v" defer></script>
-    <script src="/js/config.js?v=20260210v" defer>
+    <script src="/js/config.js?v=20260210v" defer></script>
     <script src="/js/memory.js?v=20260210v" defer></script>
-    <script src="/js/tasks.js?v=20260210v" defer></script>
+
     <script src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
   </head>
   <body>
@@ -51,16 +51,6 @@
               :aria-selected="view === 'memory'"
             >
               Brain
-            </button>
-            <button
-              class="nav-tab"
-              :class="{ active: view === 'tasks' }"
-              @click="setView('tasks')"
-              type="button"
-              role="tab"
-              :aria-selected="view === 'tasks'"
-            >
-              Tasks
             </button>
             <button
               class="nav-tab nav-tab-icon"
@@ -567,11 +557,25 @@
               <span>Loading brain...</span>
             </div>
 
+            <form class="memory-task-form" x-show="typeFilter === 'task'" @submit.prevent="addTask()">
+              <input type="text" x-model="newTaskDescription" placeholder="Task description..." class="memory-task-input" />
+              <select x-model="newTaskPriority" class="memory-task-priority">
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+              <button class="btn btn-sm" type="submit" :disabled="!newTaskDescription.trim()">Add</button>
+            </form>
+
             <div class="memory-list" x-show="!isLoading && entries.length > 0">
               <template x-for="entry in displayEntries" :key="entry.id">
-                <div class="memory-card" :class="[entry.type, isStale(entry) ? 'stale' : '']">
+                <div class="memory-card" :class="[entry.type, isStale(entry) ? 'stale' : '', entry.status === 'done' ? 'done' : '']">
                   <div class="memory-card-header">
                     <div class="memory-card-badges">
+                      <label class="task-checkbox" x-show="entry.type === 'task'" @click.stop>
+                        <input type="checkbox" :checked="entry.status === 'done'" @change="toggleTask(entry)" />
+                      </label>
                       <span class="memory-type-badge" :class="entry.type" x-text="entry.type"></span>
                       <span class="memory-category-badge" x-show="entry.category" x-text="entry.category"></span>
                       <span class="memory-category-badge" x-show="entry.key" x-text="entry.key"></span>
@@ -579,8 +583,9 @@
                       <span class="memory-category-badge" x-show="entry.enabled !== undefined" x-text="entry.enabled ? 'on' : 'off'"></span>
                     </div>
                     <div class="memory-card-meta-right">
+                      <span class="memory-card-date" x-show="entry.due">due <span x-text="entry.due"></span></span>
                       <span class="memory-card-date" x-text="entry.created || '--'"></span>
-                      <button class="memory-delete-btn" type="button" @click="remove(entry)" title="Delete entry">&times;</button>
+                      <button class="memory-delete-btn" type="button" @click="entry.type === 'task' ? removeTask(entry) : remove(entry)" title="Delete entry">&times;</button>
                     </div>
                   </div>
                   <div class="memory-card-text" x-text="cardText(entry)"></div>
@@ -591,6 +596,10 @@
                     <span class="memory-card-last-used" x-show="entry.last_used">
                       last: <span x-text="entry.last_used"></span>
                     </span>
+                    <span class="memory-card-enabled" x-show="entry.type === 'reminder'">
+                      <span x-text="entry.enabled ? '● active' : '○ disabled'"></span>
+                    </span>
+                    <span class="memory-card-cadence" x-show="entry.cadence" x-text="entry.cadence?.kind === 'interval' ? 'every ' + entry.cadence.every : 'daily @ ' + entry.cadence?.at"></span>
                     <span class="memory-card-id" x-text="entry.id"></span>
                   </div>
                 </div>
@@ -607,119 +616,7 @@
           </div>
         </section>
 
-        <section class="view tasks-view" x-show="view === 'tasks'" x-cloak role="tabpanel">
-          <div class="view-header">// tasks</div>
-          <div class="view-title">Checklist</div>
-          <div class="view-body" x-data="rhoTasks()" x-init="init()">
-            <div class="tasks-layout">
-              <section class="tasks-panel">
-                <div class="tasks-panel-header">
-                  <div>
-                    <div class="tasks-section-title">Tasks</div>
-                    <div class="tasks-section-meta" x-show="isLoading">Loading tasks...</div>
-                    <div class="tasks-section-meta tasks-error" x-show="error" x-text="error"></div>
-                  </div>
-                  <button class="btn btn-ghost" type="button" @click="loadTasks()">Refresh</button>
-                </div>
 
-                <div class="tasks-loading" x-show="isLoading">
-                  <span class="loading-spinner"></span>
-                  <span>Loading tasks...</span>
-                </div>
-
-                <div class="tasks-tabs" role="tablist" aria-label="Task filters" x-show="!isLoading">
-                  <button
-                    class="tasks-tab"
-                    :class="{ active: filter === 'all' }"
-                    type="button"
-                    @click="setFilter('all')"
-                  >
-                    All <span class="tasks-count" x-text="tasks.length"></span>
-                  </button>
-                  <button
-                    class="tasks-tab"
-                    :class="{ active: filter === 'pending' }"
-                    type="button"
-                    @click="setFilter('pending')"
-                  >
-                    Pending <span class="tasks-count" x-text="pendingCount()"></span>
-                  </button>
-                  <button
-                    class="tasks-tab"
-                    :class="{ active: filter === 'done' }"
-                    type="button"
-                    @click="setFilter('done')"
-                  >
-                    Done <span class="tasks-count" x-text="doneCount()"></span>
-                  </button>
-                </div>
-
-                <div class="tasks-list" x-show="!isLoading">
-                  <template x-for="task in filteredTasks()" :key="task.id">
-                    <div class="task-item" :class="{ done: task.status === 'done' }">
-                      <label class="task-check">
-                        <input
-                          type="checkbox"
-                          :checked="task.status === 'done'"
-                          @change="toggleTask(task)"
-                        />
-                      </label>
-                      <div class="task-body">
-                        <div class="task-title" x-text="task.description"></div>
-                        <div class="task-meta">
-                          <span class="task-priority" :class="`priority-${task.priority}`" x-text="task.priority"></span>
-                          <span class="task-date" x-show="task.due">
-                            due <span x-text="task.due"></span>
-                          </span>
-                          <span class="task-date">
-                            created <span x-text="formatDate(task.created)"></span>
-                          </span>
-                        </div>
-                        <div class="task-tags" x-show="task.tags && task.tags.length">
-                          <template x-for="tag in task.tags" :key="tag">
-                            <span class="task-tag" x-text="`#${tag}`"></span>
-                          </template>
-                        </div>
-                      </div>
-                      <button class="task-delete" type="button" @click="removeTask(task)">Delete</button>
-                    </div>
-                  </template>
-                  <div class="tasks-empty-state" x-show="tasks.length === 0 && !isLoading">
-                    <span class="empty-icon">&#x2705;</span>
-                    <span>No tasks</span>
-                    <span class="empty-hint">Add a task using the form or the CLI</span>
-                  </div>
-                  <div class="tasks-empty" x-show="tasks.length > 0 && filteredTasks().length === 0 && !isLoading">
-                    No tasks match this filter.
-                  </div>
-                </div>
-              </section>
-
-              <form class="tasks-form" @submit.prevent="addTask()">
-                <div class="tasks-form-title">Add task</div>
-                <label class="tasks-field">
-                  <span>Description</span>
-                  <input type="text" x-model="newDescription" placeholder="Describe the task" />
-                </label>
-                <label class="tasks-field">
-                  <span>Priority</span>
-                  <select x-model="newPriority">
-                    <option value="urgent">Urgent</option>
-                    <option value="high">High</option>
-                    <option value="normal">Normal</option>
-                    <option value="low">Low</option>
-                  </select>
-                </label>
-                <button class="btn" type="submit" :disabled="isSubmitting || !newDescription.trim()">
-                  Add task
-                </button>
-                <div class="tasks-form-hint">
-                  Tasks are shared with the `tasks` CLI tool.
-                </div>
-              </form>
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer class="footer">

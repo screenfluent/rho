@@ -14,6 +14,10 @@ document.addEventListener("alpine:init", () => {
     isLoading: false,
     error: "",
 
+    // Task creation state
+    newTaskDescription: "",
+    newTaskPriority: "normal",
+
     async init() {
       console.log('[rho-memory] init called');
       await this.load();
@@ -128,6 +132,65 @@ document.addEventListener("alpine:init", () => {
         await this.load();
       } catch (err) {
         this.error = err.message || "Failed to delete entry";
+      }
+    },
+
+    // ── Task methods ──
+
+    async addTask() {
+      const desc = this.newTaskDescription.trim();
+      if (!desc) return;
+      this.error = "";
+      try {
+        const res = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: desc, priority: this.newTaskPriority }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to add task");
+        }
+        this.newTaskDescription = "";
+        this.newTaskPriority = "normal";
+        await this.load();
+      } catch (err) {
+        this.error = err.message || "Failed to add task";
+      }
+    },
+
+    async toggleTask(task) {
+      if (!task) return;
+      const nextStatus = task.status === "done" ? "pending" : "done";
+      this.error = "";
+      try {
+        const res = await fetch(`/api/tasks/${task.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to update task");
+        }
+        await this.load();
+      } catch (err) {
+        this.error = err.message || "Failed to toggle task";
+      }
+    },
+
+    async removeTask(task) {
+      if (!task) return;
+      this.error = "";
+      try {
+        const res = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to delete task");
+        }
+        await this.load();
+      } catch (err) {
+        this.error = err.message || "Failed to delete task";
       }
     },
   }));
