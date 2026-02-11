@@ -141,9 +141,10 @@ Options:
 
     console.log("Running rho sync...");
 
-    // Spawn a fresh Node process to ensure we run the on-disk CLI (post-upgrade).
-    const cliPath = path.join(pkgRoot, "cli", "index.ts");
-    const r = spawnSync(process.execPath, ["--experimental-strip-types", cliPath, "sync"], {
+    // Spawn a fresh process to ensure we run the on-disk CLI (post-upgrade).
+    // Use the rho.mjs shim (not index.ts directly) so it works from node_modules.
+    const shimPath = path.join(pkgRoot, "cli", "rho.mjs");
+    const r = spawnSync(process.execPath, [shimPath, "sync"], {
       stdio: "inherit",
       env: { ...process.env },
     });

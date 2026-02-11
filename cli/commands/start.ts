@@ -374,10 +374,10 @@ Options:
     return;
   }
 
-  const indexPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
+  // Use the rho.mjs shim (not index.ts directly) so it works from node_modules.
+  const shimPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "rho.mjs");
   const child = spawn(process.execPath, [
-    "--experimental-strip-types",
-    indexPath,
+    shimPath,
     "start",
     "--monitor",
   ], {
