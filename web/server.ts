@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { WSContext } from "hono/ws";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import crypto from "node:crypto";
@@ -331,10 +331,35 @@ app.delete("/api/tasks/:id", async (c) => {
 
 // --- Memory API ---
 
-async function readMemoryEntries() {
+type MemoryEntries = {
+  behaviors: any[];
+  identity: any[];
+  user: any[];
+  learnings: any[];
+  preferences: any[];
+  contexts: any[];
+  tasks: any[];
+  reminders: any[];
+};
+
+let memoryCache: { mtimeMs: number; data: MemoryEntries } | null = null;
+
+async function readMemoryEntries(): Promise<MemoryEntries> {
+  let mtimeMs = 0;
+  try {
+    mtimeMs = (await stat(BRAIN_PATH)).mtimeMs;
+  } catch {
+    // Missing brain file or unreadable.
+    mtimeMs = 0;
+  }
+
+  if (memoryCache && memoryCache.mtimeMs === mtimeMs) {
+    return memoryCache.data;
+  }
+
   const { entries } = readBrain(BRAIN_PATH);
   const brain = foldBrain(entries);
-  return {
+  const data: MemoryEntries = {
     behaviors: brain.behaviors,
     identity: [...brain.identity.values()],
     user: [...brain.user.values()],
@@ -344,28 +369,73 @@ async function readMemoryEntries() {
     tasks: brain.tasks,
     reminders: brain.reminders,
   };
+
+  memoryCache = { mtimeMs, data };
+  return data;
 }
 
 app.get("/api/memory", async (c) => {
   try {
     const all = await readMemoryEntries();
-    const allEntries = [
-      ...all.behaviors,
-      ...all.identity,
-      ...all.user,
-      ...all.learnings,
-      ...all.preferences,
-      ...all.contexts,
-      ...all.tasks,
-      ...all.reminders,
-    ];
+
+    const total =
+      all.behaviors.length +
+      all.identity.length +
+      all.user.length +
+      all.learnings.length +
+      all.preferences.length +
+      all.contexts.length +
+      all.tasks.length +
+      all.reminders.length;
 
     const typeFilter = c.req.query("type");
     const categoryFilter = c.req.query("category");
     const q = c.req.query("q")?.toLowerCase();
 
-    let filtered = allEntries;
-    if (typeFilter) filtered = filtered.filter(e => e.type === typeFilter);
+    let baseEntries: any[];
+    if (typeFilter) {
+      switch (typeFilter) {
+        case "behavior":
+          baseEntries = all.behaviors;
+          break;
+        case "identity":
+          baseEntries = all.identity;
+          break;
+        case "user":
+          baseEntries = all.user;
+          break;
+        case "learning":
+          baseEntries = all.learnings;
+          break;
+        case "preference":
+          baseEntries = all.preferences;
+          break;
+        case "context":
+          baseEntries = all.contexts;
+          break;
+        case "task":
+          baseEntries = all.tasks;
+          break;
+        case "reminder":
+          baseEntries = all.reminders;
+          break;
+        default:
+          baseEntries = [];
+      }
+    } else {
+      baseEntries = [
+        ...all.behaviors,
+        ...all.identity,
+        ...all.user,
+        ...all.learnings,
+        ...all.preferences,
+        ...all.contexts,
+        ...all.tasks,
+        ...all.reminders,
+      ];
+    }
+
+    let filtered = baseEntries;
     if (categoryFilter) filtered = filtered.filter(e => (e as any).category === categoryFilter);
     if (q) filtered = filtered.filter(e => {
       const searchable = [
@@ -379,7 +449,7 @@ app.get("/api/memory", async (c) => {
     const categories = [...new Set(all.preferences.map(p => p.category))].sort();
 
     return c.json({
-      total: allEntries.length,
+      total,
       behaviors: all.behaviors.length,
       identity: all.identity.length,
       user: all.user.length,
@@ -410,9 +480,8 @@ app.put("/api/memory/:id", async (c) => {
       return c.json({ error: "text is required" }, 400);
     }
 
-    const { entries } = readBrain(BRAIN_PATH);
-    const brain = foldBrain(entries);
-    const allMemory = [...brain.learnings, ...brain.preferences];
+    const all = await readMemoryEntries();
+    const allMemory = [...all.learnings, ...all.preferences];
     const target = allMemory.find(e => e.id === entryId);
     if (!target) return c.json({ error: "Entry not found" }, 404);
 
@@ -423,6 +492,7 @@ app.put("/api/memory/:id", async (c) => {
     }
 
     await appendBrainEntry(BRAIN_PATH, updated as any);
+    memoryCache = null;
     return c.json({ status: "ok", entry: updated });
   } catch (error) {
     return c.json({ error: (error as Error).message ?? "Failed to update entry" }, 500);
@@ -479,6 +549,7 @@ app.post("/api/memory", async (c) => {
     }
 
     await appendBrainEntry(BRAIN_PATH, entry);
+    memoryCache = null;
     return c.json({ status: "ok", entry });
   } catch (error) {
     return c.json({ error: (error as Error).message ?? "Failed to create entry" }, 500);
@@ -489,17 +560,16 @@ app.delete("/api/memory/:id", async (c) => {
   const entryId = c.req.param("id");
   try {
     // Find the entry across all types
-    const { entries } = readBrain(BRAIN_PATH);
-    const brain = foldBrain(entries);
+    const all = await readMemoryEntries();
     const allMemory = [
-      ...brain.behaviors,
-      ...[...brain.identity.values()],
-      ...[...brain.user.values()],
-      ...brain.learnings,
-      ...brain.preferences,
-      ...brain.contexts,
-      ...brain.tasks,
-      ...brain.reminders,
+      ...all.behaviors,
+      ...all.identity,
+      ...all.user,
+      ...all.learnings,
+      ...all.preferences,
+      ...all.contexts,
+      ...all.tasks,
+      ...all.reminders,
     ];
     const target = allMemory.find(e => e.id === entryId);
     if (!target) return c.json({ error: "Entry not found" }, 404);
@@ -514,6 +584,7 @@ app.delete("/api/memory/:id", async (c) => {
       created: new Date().toISOString(),
     };
     await appendBrainEntry(BRAIN_PATH, tombstone);
+    memoryCache = null;
     return c.json({ status: "ok" });
   } catch (error) {
     return c.json({ error: (error as Error).message ?? "Failed to delete entry" }, 500);

@@ -14,6 +14,9 @@ document.addEventListener("alpine:init", () => {
     isLoading: false,
     error: "",
 
+    // Cancel in-flight loads when filters/search change quickly
+    loadController: null,
+
     // Task creation state
     newTaskDescription: "",
     newTaskPriority: "normal",
@@ -30,7 +33,6 @@ document.addEventListener("alpine:init", () => {
     newEntryCategory: "",
 
     async init() {
-      console.log('[rho-memory] init called');
       await this.load();
     },
 
@@ -68,8 +70,8 @@ document.addEventListener("alpine:init", () => {
           case "used":
             return (b.used || 0) - (a.used || 0);
           case "alpha": {
-            const aText = this.cardText(a);
-            const bText = this.cardText(b);
+            const aText = (a._alpha || this.cardText(a).toLowerCase());
+            const bText = (b._alpha || this.cardText(b).toLowerCase());
             return aText.localeCompare(bText);
           }
           case "last_used":
@@ -83,6 +85,12 @@ document.addEventListener("alpine:init", () => {
     },
 
     async load() {
+      if (this.loadController) {
+        this.loadController.abort();
+      }
+      const controller = new AbortController();
+      this.loadController = controller;
+
       this.isLoading = true;
       this.error = "";
       try {
@@ -91,13 +99,18 @@ document.addEventListener("alpine:init", () => {
         if (this.categoryFilter) params.set("category", this.categoryFilter);
         if (this.searchQuery.trim()) params.set("q", this.searchQuery.trim());
 
-        const res = await fetch(`/api/memory?${params}`);
+        const res = await fetch(`/api/memory?${params}`, { signal: controller.signal });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || `Request failed (${res.status})`);
         }
         const data = await res.json();
-        this.entries = data.entries;
+
+        this.entries = (data.entries || []).map((entry) => {
+          const displayText = this.cardText(entry);
+          return { ...entry, _displayText: displayText, _alpha: displayText.toLowerCase() };
+        });
+
         this.stats = {
           total: data.total,
           behaviors: data.behaviors,
@@ -111,13 +124,16 @@ document.addEventListener("alpine:init", () => {
           categories: data.categories,
         };
         this.updateDisplay();
-        console.log('[rho-memory] loaded', this.entries.length, 'entries, display:', this.displayEntries.length);
       } catch (err) {
+        if (err && err.name === "AbortError") {
+          return;
+        }
         this.error = err.message || "Failed to load brain";
-        console.error('[rho-memory] load error:', err);
       } finally {
-        this.isLoading = false;
-        console.log('[rho-memory] isLoading:', this.isLoading, 'entries:', this.entries.length);
+        if (this.loadController === controller) {
+          this.loadController = null;
+          this.isLoading = false;
+        }
       }
     },
 
@@ -206,7 +222,7 @@ document.addEventListener("alpine:init", () => {
     },
 
     async remove(entry) {
-      const preview = this.cardText(entry).substring(0, 100);
+      const preview = (entry._displayText || this.cardText(entry)).substring(0, 100);
       if (!confirm(`Delete brain entry?\n\n"${preview}..."`)) return;
       try {
         const res = await fetch(`/api/memory/${encodeURIComponent(entry.id)}`, { method: "DELETE" });

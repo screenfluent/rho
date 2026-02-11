@@ -628,7 +628,7 @@
                     </div>
                   </div>
                   <!-- Normal view -->
-                  <div class="memory-card-text" x-show="editingId !== entry.id" x-text="cardText(entry)"></div>
+                  <div class="memory-card-text" x-show="editingId !== entry.id" x-text="entry._displayText || cardText(entry)"></div>
                   <!-- Edit view -->
                   <div x-show="editingId === entry.id">
                     <textarea
